@@ -24,21 +24,20 @@ if ! command -v node &> /dev/null; then
     exit 1
 fi
 
-# 2. 检查 ROS 2 依赖
-echo "检查 ROS 2 依赖..."
-if ! command -v ros2 &> /dev/null; then
-    echo "提示: 未检测到 ROS 2 环境，尝试加载默认安装路径..."
-    [ -f "/opt/ros/humble/setup.bash" ] && source /opt/ros/humble/setup.bash
-fi
-
-# 2.5 自动加载本地工作空间 (xuegecar)
-ROBOT_WORKSPACE="/root/chuyun_ws"
-if [ -f "$ROBOT_WORKSPACE/install/setup.bash" ]; then
-    echo "发现 xuegecar 工作空间，正在加载环境..."
-    source "$ROBOT_WORKSPACE/install/setup.bash"
-else
-    echo "警告: 未能在 $ROBOT_WORKSPACE 找到安装环境，请确保已执行 colcon build"
-fi
+# 2. Load ROS and source-built workspaces in dependency order.
+echo "正在加载 ROS、底盘、SLAM 和 Nav2 源码工作空间..."
+for ros_setup_file in \
+    /opt/ros/humble/setup.bash \
+    /root/chuyun_ws/install/local_setup.bash \
+    /root/slam_ws/install/local_setup.bash \
+    /root/nav2_ws/install/local_setup.bash; do
+    if [ ! -f "$ros_setup_file" ]; then
+        echo "错误: 缺少工作空间安装环境 $ros_setup_file" >&2
+        exit 1
+    fi
+    source "$ros_setup_file" || exit 1
+done
+unset ros_setup_file
 
 # 2.6 WSL 兼容性设置
 export QT_X11_NO_MITSHM=1
@@ -83,11 +82,22 @@ if [ -f "server.js" ]; then
     BACKEND_PID=$!
     
     # 等待后端启动
-    sleep 2
-
-    # 触发自动启动任务 (例如 Foxglove)
-    echo "正在触发自动启动服务..."
-    curl -s -X POST http://localhost:3000/api/run_task/startup > /dev/null
+    # Wait for the backend HTTP endpoint and retry the startup trigger.
+    # During boot, Node/ROS initialization can take longer than two seconds.
+    echo "Waiting for the backend service..."
+    startup_triggered=false
+    for _ in $(seq 1 30); do
+        if curl -fsS --max-time 2 -X POST http://localhost:3000/api/run_task/startup > /dev/null; then
+            startup_triggered=true
+            echo "Automatic startup triggered."
+            break
+        fi
+        sleep 1
+    done
+    if [ "$startup_triggered" != true ]; then
+        echo "Error: backend did not become ready within 30 seconds." >&2
+        exit 1
+    fi
     
     # 处理退出信号，确保先停止 ROS 任务再关闭后端
     CLEANUP_DONE=false
@@ -116,6 +126,9 @@ else
     echo "警告: 未找到 server.js，后端服务未启动。"
 fi
 
-# 5. 启动开发服务器 (前端界面)
+# 5. 提供已构建页面，避免服务重启时 HMR 自动刷新导致页面丢失
 echo "正在启动前端界面..."
-npm run dev
+if [ ! -f dist/index.html ]; then
+    npm run build || exit 1
+fi
+npm run preview -- --port 5173 --strictPort

@@ -3,6 +3,7 @@
  * 处理与 foxglove_bridge 的连接、话题订阅、消息发布
  */
 import { ref, reactive, readonly } from 'vue'
+import { readBatteryState } from './battery.js'
 
 // ======================== 状态 ========================
 const connectionState = ref('disconnected') // disconnected | connecting | connected | error
@@ -218,7 +219,7 @@ function handleBinaryMessage(buffer) {
 /**
  * CDR 二进制解析辅助类
  */
-class CdrReader {
+export class CdrReader {
     constructor(buffer, offset) {
         this.view = new DataView(buffer)
         this.pos = offset
@@ -319,8 +320,13 @@ function handleCdrMessage(subId, channel, buffer, offset) {
     const reader = new CdrReader(buffer, offset + 4)
 
     try {
-        if (channel.schemaName === 'std_msgs/msg/UInt16' || channel.schemaName === 'std_msgs/UInt16') {
+        if (channel.schemaName === 'sensor_msgs/msg/BatteryState' || channel.schemaName === 'sensor_msgs/BatteryState') {
+            callback(readBatteryState(reader))
+        } else if (channel.schemaName === 'std_msgs/msg/UInt16' || channel.schemaName === 'std_msgs/UInt16') {
             const value = reader.readUint16()
+            callback({ data: value })
+        } else if (channel.schemaName === 'std_msgs/msg/Float32' || channel.schemaName === 'std_msgs/Float32') {
+            const value = reader.readFloat32()
             callback({ data: value })
         } else if (channel.schemaName === 'std_msgs/msg/Int32' || channel.schemaName === 'std_msgs/Int32') {
             const value = reader.readInt32()
@@ -552,7 +558,7 @@ function handleCdrMessage(subId, channel, buffer, offset) {
 
 /**
  * 根据话题名查找 channelId
- * @param {string} topicName - 话题名, 如 "/battery_state"
+ * @param {string} topicName - 话题名, 如 "/odom"
  * @returns {number|null} channelId
  */
 function findChannelByTopic(topicName) {
@@ -642,6 +648,24 @@ function clientAdvertise(topic, schemaName, encoding = 'json') {
 }
 
 /**
+ * 撤销客户端发布频道，及时释放 foxglove_bridge 中对应的 ROS publisher。
+ * 命令类话题不应在页面整个生命周期内保持 publisher 常驻。
+ * @param {number} channelId - clientAdvertise 返回的 channelId
+ */
+function clientUnadvertise(channelId) {
+    if (!Number.isInteger(channelId)) return
+
+    clientChannels.delete(channelId)
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            op: 'unadvertise',
+            channelIds: [channelId]
+        }))
+    }
+    console.log(`[Foxglove] Client Unadvertise: channelId=${channelId}`)
+}
+
+/**
  * 发送消息到已声明的客户端频道
  * Client Message Data 二进制格式:
  *   [opcode: 0x01 (1 byte)] [channelId: uint32 LE (4 bytes)] [payload: remaining bytes]
@@ -709,12 +733,13 @@ function sendGoalPose(channelId, x, y, yaw = 0) {
  * }
  *
  * @param {number} channelId - /cmd_vel 对应的客户端频道 ID
- * @param {number} linearX - 线速度 (m/s), 正为前进, 负为后退
+ * @param {number} linearX - X 方向线速度 (m/s), 正为前进, 负为后退
+ * @param {number} linearY - Y 方向线速度 (m/s), 正为左移, 负为右移
  * @param {number} angularZ - 角速度 (rad/s), 正为左转, 负为右转
  */
-function sendTwist(channelId, linearX, angularZ) {
+function sendTwist(channelId, linearX, linearY, angularZ) {
     const twist = {
-        linear: { x: linearX, y: 0.0, z: 0.0 },
+        linear: { x: linearX, y: linearY, z: 0.0 },
         angular: { x: 0.0, y: 0.0, z: angularZ }
     }
     publishMessage(channelId, twist)
@@ -776,6 +801,7 @@ export function useFoxglove() {
         subscribe,
         unsubscribe,
         clientAdvertise,
+        clientUnadvertise,
         publishMessage,
         sendTwist,
         sendGoalPose,

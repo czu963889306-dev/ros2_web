@@ -1,0 +1,33 @@
+/**:
+  ros__parameters:
+    address: "0.0.0.0"
+    port: 8765
+    include_hidden: true
+    num_threads: 1
+    min_qos_depth: 1
+    max_qos_depth: 1
+    send_buffer_limit: 10000000
+    topic_whitelist:
+      - "^/battery_state$"
+      - "^/map$"
+      - "^/global_costmap/costmap$"
+      - "^/scan$"
+      - "^/web/tf$"
+      - "^/tf_static$"
+      - "^/web/odometry/filtered$"
+      - "^/plan$"
+      - "^/navigate_to_pose/_action/feedback$"
+      - "^/lite_navigation/feedback$"
+    client_topic_whitelist:
+      - "^/cmd_vel$"
+      - "^/servo_cmd$"
+      - "^/goal_pose$"
+      - "^/initialpose$"
+      - "^/lite_navigation/cancel$"
+      - "^/navigation/cancel$"
+    service_whitelist:
+      - "(?!)"
+    param_whitelist:
+      - "(?!)"
+    capabilities:
+      - "clientPublish"

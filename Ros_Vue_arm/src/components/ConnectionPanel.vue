@@ -21,13 +21,11 @@
         断开连接
       </button>
 
-      <!-- 连接成功提示 -->
       <div class="status-indicator" v-if="isConnected">
         <span class="status-dot connected"></span>
         <span>已连接</span>
       </div>
 
-      <!-- 错误信息 -->
       <div class="error-message" v-if="errorMessage">
         {{ errorMessage }}
       </div>
@@ -40,10 +38,10 @@ import { computed } from 'vue'
 
 const props = defineProps({
   connectionState: String,
-  errorMessage: String
+  errorMessage: String,
 })
 
 const emit = defineEmits(['connect', 'disconnect'])
-
 const isConnected = computed(() => props.connectionState === 'connected')
+
 </script>

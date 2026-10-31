@@ -1,83 +1,142 @@
 {
-    "tasks": {
-        "startup": [
-            {
-                "id": "foxglove",
-                "description": "Foxglove 数据桥接 (高带宽模式)",
-                "command": "ros2",
-                "args": [
-                    "run",
-                    "foxglove_bridge",
-                    "foxglove_bridge",
-                    "--ros-args",
-                    "-p",
-                    "include_hidden:=true",
-                    "-p",
-                    "send_buffer_limit:=100000000",
-                    "-p",
-                    "num_threads:=4",
-                    "-p",
-                    "max_qos_depth:=10",
-                    "-p",
-                    "min_qos_depth:=10"
-                ],
-                "delay": 0
-            }
-        ],
-        "mapping": [
-            {
-                "id": "mapCartographer",
-                "description": "Cartographer 建图算法",
-                "command": "ros2",
-                "args": [
-                    "launch",
-                    "slam_gmapping",
-                    "slam_gmapping.launch.py"
-                ],
-                "delay": 0
-            }
-        ],
-        "navigation": [
-            {
-                "id": "nav2",
-                "description": "Nav2 导航栈 (AMCL + 路径规划)",
-                "command": "ros2",
-                "args": [
-                    "launch",
-                    "xuegecar_navigation2",
-                    "navigation2.launch.py"
-                ],
-                "delay": 0
-            }
-        ]
-    },
-    "save_map": {
+  "tasks": {
+    "startup": [
+      {
+        "id": "foxglove",
+        "description": "Foxglove 数据桥接 (低负载模式)",
         "command": "ros2",
         "args": [
-            "run",
-            "nav2_map_server",
-            "map_saver_cli",
-            "-f"
+          "run",
+          "foxglove_bridge",
+          "foxglove_bridge",
+          "--ros-args",
+          "--params-file",
+          "/root/ros2_web/foxglove_bridge.params.yaml"
         ],
-        "description": "保存地图（-f 后追加地图名和路径）",
-        "save_dir": "/root/chuyun_ws/src/xuegecar_navigation2/maps"
+        "delay": 0
+      }
+    ],
+    "mapping": [
+      {
+        "id": "mapSlamToolbox",
+        "description": "slam_toolbox 异步建图",
+        "command": "ros2",
+        "args": [
+          "launch",
+          "chuyun_navigation2",
+          "slam_toolbox_mapping.launch.py",
+          "use_sim_time:=false"
+        ],
+        "delay": 0
+      }
+    ]
+  },
+  "save_map": {
+    "command": "ros2",
+    "args": [
+      "run",
+      "nav2_map_server",
+      "map_saver_cli",
+      "-f"
+    ],
+    "description": "保存地图（-f 后追加地图名和路径）",
+    "save_dir": "/root/chuyun_ws/src/chuyun_navigation2/maps"
+  },
+  "maps_dir": "/root/chuyun_ws/src/chuyun_navigation2/maps",
+  "camera": {
+    "stream_url": "/stream",
+    "stream_port": 8080,
+    "mediamtx_api_url": "http://127.0.0.1:9997",
+    "webrtc_port": 8889,
+    "preferred_webrtc_path": "cam0"
+  },
+  "services": {
+    "set_arm_pose": "/set_arm_pose"
+  },
+  "topics": {
+    "cmd_vel": "/cmd_vel",
+    "servo_cmd": "/servo_cmd",
+    "map": "/map",
+    "costmap": "/global_costmap/costmap",
+    "scan": "/scan",
+    "tf": "/web/tf",
+    "odom": "/web/odometry/filtered",
+    "plan": "/plan",
+    "goal_pose": "/goal_pose",
+    "initial_pose": "/initialpose",
+    "navigate_feedback": "/lite_navigation/feedback",
+    "cancel_navigation": "/lite_navigation/cancel",
+    "battery_state": "/battery_state"
+  },
+  "default_mapping_algorithm": "slam_toolbox",
+  "mapping_algorithms": {
+    "cartographer": {
+      "id": "mapCartographer",
+      "description": "Cartographer 建图（融合里程计）",
+      "command": "ros2",
+      "args": [
+        "launch",
+        "chuyun_cartographer",
+        "cartographer.launch.py",
+        "configuration_basename:=chuyun_laser_2d_ekf.lua",
+        "odom_topic:=/odometry/filtered",
+        "use_sim_time:=false"
+      ],
+      "delay": 0
     },
-    "maps_dir": "/root/chuyun_ws/src/xuegecar_navigation2/maps",
-    "camera": {
-        "stream_url": "http://192.168.31.194:8081/"
+    "gmapping": {
+      "id": "mapGmapping",
+      "description": "Gmapping 建图",
+      "command": "ros2",
+      "args": [
+        "launch",
+        "slam_gmapping",
+        "slam_gmapping.launch.py"
+      ],
+      "delay": 0
     },
-    "topics": {
-        "cmd_vel": "/cmd_vel",
-        "battery": "/battery",
-        "map": "/map",
-        "costmap": "/global_costmap/costmap",
-        "scan": "/scan",
-        "tf": "/tf",
-        "odom": "/odom",
-        "plan": "/plan",
-        "goal_pose": "/goal_pose",
-        "initial_pose": "/initialpose",
-        "navigate_feedback": "/navigate_to_pose/_action/feedback",
-        "imu": "/imu"
+    "slam_toolbox": {
+      "id": "mapSlamToolbox",
+      "description": "slam_toolbox 异步建图",
+      "command": "ros2",
+      "args": [
+        "launch",
+        "chuyun_navigation2",
+        "slam_toolbox_mapping.launch.py",
+        "use_sim_time:=false"
+      ],
+      "delay": 0
     }
+  },
+  "default_navigation_engine": "lite",
+  "navigation_engines": {
+    "nav2": {
+      "id": "navigation_nav2",
+      "description": "Nav2 导航（AMCL + A* + DWB）",
+      "command": "ros2",
+      "args": [
+        "launch",
+        "chuyun_navigation2",
+        "nav2_rk3566.launch.py"
+      ],
+      "params_files": {
+        "diff": "/root/chuyun_ws/install/chuyun_navigation2/share/chuyun_navigation2/config/nav2_rk3566_diff.yaml",
+        "omni": "/root/chuyun_ws/install/chuyun_navigation2/share/chuyun_navigation2/config/nav2_rk3566_omni.yaml"
+      }
+    },
+    "lite": {
+      "id": "navigation_lite",
+      "description": "Lite 轻量导航",
+      "command": "ros2",
+      "args": [
+        "launch",
+        "chuyun_navigation2",
+        "lite_navigation.launch.py"
+      ],
+      "params_files": {
+        "diff": "/root/chuyun_ws/install/chuyun_navigation2/share/chuyun_navigation2/config/lite_navigation_diff.yaml",
+        "omni": "/root/chuyun_ws/install/chuyun_navigation2/share/chuyun_navigation2/config/lite_navigation_omni.yaml"
+      }
+    }
+  }
 }

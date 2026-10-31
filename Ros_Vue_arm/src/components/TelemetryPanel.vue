@@ -1,10 +1,10 @@
 <template>
   <div class="card">
     <div class="card-header">
-      底盘里程计 (Odom)
+      融合里程计 (EKF Odom)
     </div>
     <div class="card-body">
-      <div v-if="!odomData" class="empty-text">等待数据 (/odom)...</div>
+      <div v-if="!odomData" class="empty-text">等待 IMU + ODOM 融合数据...</div>
       <div v-else class="telemetry-grid">
         <div class="data-group">
           <div class="data-label">位置 X</div>

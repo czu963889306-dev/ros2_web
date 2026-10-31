@@ -3,23 +3,33 @@
     <!-- 顶部导航栏 -->
     <header class="console-header">
       <h1>机器人中控台</h1>
+      <div class="header-controls">
+        <WifiSettings @open="stopKeyboardControl" />
+        <SystemResources />
+        <BatteryStatus compact :data="batteryData" :received-at="batteryReceivedAt" :connected="isConnected" />
+        <ModelSettings @open="stopKeyboardControl" />
+        <VoiceSettings @open="stopKeyboardControl" />
+        <ServiceManager @open="stopKeyboardControl" />
       <div class="status-indicator">
         <span class="status-dot" :class="connectionState"></span>
         <span>{{ statusText }}</span>
+      </div>
       </div>
     </header>
 
     <!-- 主体三栏布局 -->
     <main class="console-body">
-      <!-- 左栏: 摇杆 -->
+      <!-- 左栏: 键盘控制 -->
       <section class="left-panel">
-        <JoystickControl
-          :connected="isConnected"
-          @velocity-change="onVelocityChange"
+        <KeyboardControl
+          :max-linear-speed="maxLinearVelocity"
+          :max-angular-speed="maxAngularVelocity"
+          @speed-settings-change="onSpeedSettingsChange"
         />
 
         <CameraView
           :default-url="cameraStreamUrl"
+          :discovery-url="`${API_BASE}/camera/streams`"
         />
       </section>
 
@@ -41,6 +51,8 @@
           :waypoints="waypointQueue"
           :activeWaypoint="activeWaypoint"
           :navFeedback="navFeedback"
+          :isPickingPreset="isPickingPreset"
+          @preset-selected="onPresetSelected"
           @goal-set="onGoalSet"
           @waypoint-add="onWaypointAdd"
           @waypoint-reached="onWaypointReached"
@@ -48,7 +60,7 @@
         />
       </section>
 
-      <!-- 右栏: 连接 + 电量 + 话题 -->
+      <!-- 右栏: 连接 + 话题 -->
       <section class="right-panel">
         <ConnectionPanel
           :connectionState="connectionState"
@@ -57,29 +69,40 @@
           @disconnect="handleDisconnect"
         />
 
-        <BatteryStatus
-          :percentage="batteryPercentage"
-          :voltage="batteryVoltage"
-          :connected="isConnected"
-        />
+        <BatteryStatus :data="batteryData" :received-at="batteryReceivedAt" :connected="isConnected" />
 
         <TelemetryPanel
           v-if="isConnected"
           :odomData="odomData"
         />
 
+        <ArmControl
+          :connected="isConnected"
+          :servo-ready="servoReady"
+          @servo-command="onServoCommand"
+          @home-command="onArmHome"
+        />
+
         <MappingControl 
           :connected="isConnected" 
           v-model:isMapping="mappingActive"
           @mappingStarted="onMappingStarted"
+          @dialogOpened="stopKeyboardControl"
         />
 
         <NavigationControl
+          @dialog-opened="stopKeyboardControl"
+          @navigation-engine="onNavigationEngine"
+          :isPickingPreset="isPickingPreset"
+          :pickedPresetPose="pickedPresetPose"
+          @pick-preset="isPickingPreset = $event"
+          @external-goal="onExternalGoal"
           :connected="isConnected"
           v-model:isNavigating="navigationActive"
           v-model:isSettingPose="isSettingPose"
           v-model:multiPointMode="multiPointMode"
           :waypointCount="waypointQueue.length + (activeWaypoint ? 1 : 0)"
+          @navigation-stop-requested="onNavigationStopRequested"
           @clear-waypoints="clearWaypoints"
         />
 
@@ -142,14 +165,20 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useFoxglove } from './composables/useFoxglove.js'
-import JoystickControl from './components/JoystickControl.vue'
-import BatteryStatus from './components/BatteryStatus.vue'
+import KeyboardControl from './components/KeyboardControl.vue'
 import SlamMap from './components/SlamMap.vue'
 import ConnectionPanel from './components/ConnectionPanel.vue'
 import TelemetryPanel from './components/TelemetryPanel.vue'
 import MappingControl from './components/MappingControl.vue'
 import NavigationControl from './components/NavigationControl.vue'
 import CameraView from './components/CameraView.vue'
+import ArmControl from './components/ArmControl.vue'
+import ModelSettings from './components/ModelSettings.vue'
+import VoiceSettings from './components/VoiceSettings.vue'
+import ServiceManager from './components/ServiceManager.vue'
+import BatteryStatus from './components/BatteryStatus.vue'
+import SystemResources from './components/SystemResources.vue'
+import WifiSettings from './components/WifiSettings.vue'
 
 const foxglove = useFoxglove()
 const slamMapRef = ref(null)
@@ -159,17 +188,18 @@ let connectRetryTimer = null
 
 const TOPIC_DEFAULTS = {
   cmd_vel: '/cmd_vel',
-  battery: '/battery',
+  battery_state: '/battery_state',
+  servo_cmd: '/servo_cmd',
   map: '/map',
   costmap: '/global_costmap/costmap',
   scan: '/scan',
   tf: '/tf',
-  odom: '/odom',
+  odom: '/odometry/filtered',
   plan: '/plan',
   goal_pose: '/goal_pose',
   initial_pose: '/initialpose',
-  navigate_feedback: '/navigate_to_pose/_action/feedback',
-  imu: '/imu'
+  cancel_navigation: '/lite_navigation/cancel',
+  navigate_feedback: '/lite_navigation/feedback'
 }
 
 // ---- 建图状态 (跨组件共享) ----
@@ -186,20 +216,19 @@ const FEEDBACK_REACHED_THRESHOLD = 0.10
 
 // ---- 状态 ----
 const topics = ref([])
-const batteryPercentage = ref(-1)
-const batteryVoltage = ref(0)
 const mapData = ref(null)
 const costmapData = ref(null)
 const scanData = ref(null)
 const tfData = ref(null)
 const odomData = ref(null)
+const batteryData = ref(null)
+const batteryReceivedAt = ref(0)
 const planData = ref(null)
 
 // 导航反馈数据
 const navFeedback = ref(null)
-const imuData = ref(null)
 const runtimeTopics = ref({ ...TOPIC_DEFAULTS })
-const cameraStreamUrl = ref(`http://${window.location.hostname}:8081/`)
+const cameraStreamUrl = ref(`http://${window.location.hostname}:8080/stream`)
 
 // ---- 图层控制 ----
 const mapLayers = ref({
@@ -213,24 +242,72 @@ const mapLayers = ref({
 
 // ================= Foxglove 频道 ID ==================
 let cmdVelChannelId = null
+let servoChannelId = null
+const servoReady = ref(false)
 let goalPoseChannelId = null
 let initialPoseChannelId = null
+let cancelNavigationChannelId = null
+let cmdVelReleaseTimer = null
+let goalPoseReleaseTimer = null
+let initialPoseReleaseTimer = null
+let cancelNavigationReleaseTimer = null
 
 // 订阅 ID
-let batterySubId = null
 let mapSubId = null
 let costmapSubId = null
 let scanSubId = null
 let tfSubId = null
 let odomSubId = null
+let batterySubId = null
 let planSubId = null
 let feedbackSubId = null // 导航反馈订阅 ID
-let imuSubId = null
 
 // ---- 计算属性 ----
 const connectionState = computed(() => foxglove.connectionState.value)
 const errorMessage = computed(() => foxglove.errorMessage.value)
 const isConnected = computed(() => connectionState.value === 'connected')
+
+function clearPublisherReleaseTimers() {
+  for (const timer of [
+    cmdVelReleaseTimer,
+    goalPoseReleaseTimer,
+    initialPoseReleaseTimer,
+    cancelNavigationReleaseTimer
+  ]) {
+    if (timer) clearTimeout(timer)
+  }
+  cmdVelReleaseTimer = null
+  goalPoseReleaseTimer = null
+  initialPoseReleaseTimer = null
+  cancelNavigationReleaseTimer = null
+}
+
+function resetChannelHandles() {
+  clearPublisherReleaseTimers()
+  cmdVelChannelId = null
+  servoChannelId = null
+  servoReady.value = false
+  goalPoseChannelId = null
+  initialPoseChannelId = null
+  cancelNavigationChannelId = null
+  mapSubId = null
+  costmapSubId = null
+  scanSubId = null
+  tfSubId = null
+  odomSubId = null
+  batterySubId = null
+  batteryData.value = null
+  batteryReceivedAt.value = 0
+  planSubId = null
+  feedbackSubId = null
+}
+
+// WebSocket 自动重连会创建一个全新的 Foxglove 会话；旧频道 ID 和订阅 ID 均已失效。
+watch(connectionState, (state, previousState) => {
+  if (state !== 'connected' || previousState !== 'connected') {
+    resetChannelHandles()
+  }
+})
 
 const statusText = computed(() => {
   switch (connectionState.value) {
@@ -254,16 +331,15 @@ function onMappingStarted() {
 
 // 清空所有订阅数据
 function clearAllData() {
-  batteryPercentage.value = -1
-  batteryVoltage.value = 0
   mapData.value = null
   costmapData.value = null
   scanData.value = null
   tfData.value = null
   odomData.value = null
+  batteryData.value = null
+  batteryReceivedAt.value = 0
   planData.value = null
   navFeedback.value = null // 清除导航反馈数据
-  imuData.value = null
   waypointQueue.value = []
   activeWaypoint.value = null
   topics.value = []
@@ -271,18 +347,7 @@ function clearAllData() {
 
 function handleDisconnect() {
   foxglove.disconnect()
-  cmdVelChannelId = null
-  goalPoseChannelId = null
-  initialPoseChannelId = null
-  batterySubId = null
-  mapSubId = null
-  costmapSubId = null
-  scanSubId = null
-  tfSubId = null
-  odomSubId = null
-  planSubId = null
-  feedbackSubId = null // 清除订阅 ID
-  imuSubId = null
+  resetChannelHandles()
   clearAllData()
 }
 
@@ -291,6 +356,7 @@ async function loadRuntimeConfig() {
     const res = await fetch(`${API_BASE}/runtime_config`)
     const data = await res.json()
     runtimeTopics.value = { ...TOPIC_DEFAULTS, ...(data.topics || {}) }
+    onNavigationEngine(navigationEngine.value)
     cameraStreamUrl.value = data.camera?.stream_url || cameraStreamUrl.value
   } catch (err) {
     console.warn('加载运行时配置失败，使用默认话题:', err)
@@ -298,108 +364,110 @@ async function loadRuntimeConfig() {
   }
 }
 
+
 /**
  * 当服务器广播可用频道后，自动:
- * 1. Advertise /cmd_vel (用于发布摇杆指令)
- * 2. Subscribe /battery_state (电量)
- * 3. Subscribe /map (SLAM 地图)
+ * 订阅机器人状态话题。命令话题的 publisher 在真正发送命令时按需创建。
  */
 function onChannelsReady(event) {
   const channels = event.detail
   topics.value = channels
 
-  // 1. 声明 /cmd_vel 发布频道
-  if (!cmdVelChannelId) {
-    cmdVelChannelId = foxglove.clientAdvertise(runtimeTopics.value.cmd_vel, 'geometry_msgs/Twist', 'json')
+  // 单舵机控制频道
+  if (!servoChannelId) {
+    servoChannelId = foxglove.clientAdvertise(runtimeTopics.value.servo_cmd, 'geometry_msgs/Vector3', 'json')
+    servoReady.value = true
   }
 
-  // 2. 订阅 /battery (电压值，单位可能是 0.1V)
-  if (!batterySubId) {
-    batterySubId = foxglove.subscribe(runtimeTopics.value.battery, (data) => {
-      // std_msgs/msg/UInt16 → data 字段
-      if (data.data !== undefined) {
-        batteryVoltage.value = (data.data / 10).toFixed(1)
-        
-        // 自动推算百分比 (根据常见的 2S 或 3S 锂电池范围)
-        const raw = data.data
-        if (raw > 90) { // 可能是 3S (9.6V - 12.6V)
-          batteryPercentage.value = Math.max(0, Math.min(100, Math.round((raw - 96) / (126 - 96) * 100)))
-        } else { // 可能是 2S (6.4V - 8.4V)
-          batteryPercentage.value = Math.max(0, Math.min(100, Math.round((raw - 64) / (84 - 64) * 100)))
-        }
-      }
-    })
-  }
-
-  // 3. 订阅 /map
+  // 2. 订阅 /map
   if (!mapSubId) {
     mapSubId = foxglove.subscribe(runtimeTopics.value.map, (data) => {
       mapData.value = data
     })
   }
 
-  // 4. 订阅 /scan
+  // 3. 订阅代价地图
   if (!costmapSubId) {
     costmapSubId = foxglove.subscribe(runtimeTopics.value.costmap, (data) => {
       costmapData.value = data
     })
   }
 
-  // 5. 订阅 /scan
+  // 4. 订阅 /scan
   if (!scanSubId) {
     scanSubId = foxglove.subscribe(runtimeTopics.value.scan, (data) => {
       scanData.value = data
     })
   }
 
-  // 6. 订阅 /tf
+  // 5. 订阅 /tf
   if (!tfSubId) {
     tfSubId = foxglove.subscribe(runtimeTopics.value.tf, (data) => {
       tfData.value = data
     })
   }
 
-  // 7. 订阅 /odom
+  // 6. 订阅 EKF 融合里程计
   if (!odomSubId) {
     odomSubId = foxglove.subscribe(runtimeTopics.value.odom, (data) => {
       odomData.value = data
     })
   }
 
-  // 8. 声明 /goal_pose 发布频道
-  if (!goalPoseChannelId) {
-    goalPoseChannelId = foxglove.clientAdvertise(runtimeTopics.value.goal_pose, 'geometry_msgs/PoseStamped', 'json')
+  if (!batterySubId) {
+    batterySubId = foxglove.subscribe(runtimeTopics.value.battery_state, (data) => {
+      batteryData.value = data
+      batteryReceivedAt.value = Date.now()
+    })
   }
 
-  // 9. 订阅 /plan (导航路径)
+  // 8. 订阅 /plan (导航路径)
   if (!planSubId) {
     planSubId = foxglove.subscribe(runtimeTopics.value.plan, (data) => {
       planData.value = data
     })
   }
 
-  // 10. 声明 /initialpose 发布频道
-  if (!initialPoseChannelId) {
-    initialPoseChannelId = foxglove.clientAdvertise(runtimeTopics.value.initial_pose, 'geometry_msgs/PoseWithCovarianceStamped', 'json')
-  }
-
-  // 11. 订阅导航反馈 (距离与预计时间)
+  // 10. 订阅导航反馈 (距离与预计时间)
   if (!feedbackSubId) {
     feedbackSubId = foxglove.subscribe(runtimeTopics.value.navigate_feedback, (data) => {
       navFeedback.value = normalizeNavFeedback(data)
     })
   }
 
-  // 12. 订阅 IMU（可配置，当前仅缓存数据）
-  if (!imuSubId) {
-    imuSubId = foxglove.subscribe(runtimeTopics.value.imu, (data) => {
-      imuData.value = data
-    })
+}
+
+const navigationEngine = ref('lite')
+function onNavigationEngine(engine) {
+  if (!['nav2', 'lite'].includes(engine)) return
+  navigationEngine.value = engine
+  const feedbackTopic = engine === 'nav2' ? '/navigate_to_pose/_action/feedback' : '/lite_navigation/feedback'
+  const cancelTopic = engine === 'nav2' ? '/navigation/cancel' : '/lite_navigation/cancel'
+  if (runtimeTopics.value.navigate_feedback !== feedbackTopic) {
+    if (feedbackSubId) foxglove.unsubscribe(feedbackSubId)
+    feedbackSubId = null
+    navFeedback.value = null
+    runtimeTopics.value.navigate_feedback = feedbackTopic
+    if (isConnected.value) feedbackSubId = foxglove.subscribe(feedbackTopic, data => { navFeedback.value = normalizeNavFeedback(data) })
+  }
+  if (runtimeTopics.value.cancel_navigation !== cancelTopic) {
+    if (cancelNavigationReleaseTimer) clearTimeout(cancelNavigationReleaseTimer)
+    if (cancelNavigationChannelId) foxglove.clientUnadvertise(cancelNavigationChannelId)
+    cancelNavigationChannelId = null
+    runtimeTopics.value.cancel_navigation = cancelTopic
   }
 }
 
 function normalizeNavFeedback(data) {
   if (!data || typeof data !== 'object') return null
+
+  // 轻量导航节点使用 std_msgs/Float32 发布剩余距离
+  if (Number.isFinite(data.data)) {
+    return {
+      distance_remaining: data.data,
+      estimated_time_remaining: { sec: 0, nanosec: 0 }
+    }
+  }
 
   // 已解析扁平结构
   if (typeof data.distance_remaining === 'number' || data.estimated_time_remaining) {
@@ -437,25 +505,113 @@ onUnmounted(() => {
   handleDisconnect()
 })
 
-// ---- 摇杆速度变化 → 发送 Twist ----
-function onVelocityChange({ linearX, angularZ }) {
-  if (cmdVelChannelId && isConnected.value) {
-    foxglove.sendTwist(cmdVelChannelId, linearX, angularZ)
+// ---- 键盘速度变化 → 发送 Twist ----
+function ensureCmdVelPublisher() {
+  if (!isConnected.value) return null
+  if (!cmdVelChannelId) {
+    cmdVelChannelId = foxglove.clientAdvertise(runtimeTopics.value.cmd_vel, 'geometry_msgs/Twist', 'json')
+  }
+  return cmdVelChannelId
+}
+
+function releaseCmdVelPublisher(delay = 300) {
+  if (cmdVelReleaseTimer) clearTimeout(cmdVelReleaseTimer)
+  cmdVelReleaseTimer = setTimeout(() => {
+    if (cmdVelChannelId) foxglove.clientUnadvertise(cmdVelChannelId)
+    cmdVelChannelId = null
+    cmdVelReleaseTimer = null
+  }, delay)
+}
+
+function publishVelocity(linearX = 0, linearY = 0, angularZ = 0) {
+  const channelId = ensureCmdVelPublisher()
+  if (!channelId) return
+  if (cmdVelReleaseTimer) {
+    clearTimeout(cmdVelReleaseTimer)
+    cmdVelReleaseTimer = null
+  }
+  foxglove.sendTwist(channelId, linearX, linearY, angularZ)
+  if (linearX === 0 && linearY === 0 && angularZ === 0) {
+    releaseCmdVelPublisher()
   }
 }
+
+
+// 点击“停止导航”时：先立即发布零速，再让导航节点清空路径。
+// 两条命令都复用已连接的 WebSocket，不再等待 ROS 2 CLI 做 DDS 发现。
+function onNavigationStopRequested() {
+  publishVelocity(0, 0, 0)
+  if (!isConnected.value) return
+
+  if (!cancelNavigationChannelId) {
+    cancelNavigationChannelId = foxglove.clientAdvertise(
+      runtimeTopics.value.cancel_navigation,
+      'std_msgs/Empty',
+      'json'
+    )
+  }
+  foxglove.publishMessage(cancelNavigationChannelId, {})
+
+  if (cancelNavigationReleaseTimer) clearTimeout(cancelNavigationReleaseTimer)
+  cancelNavigationReleaseTimer = setTimeout(() => {
+    if (cancelNavigationChannelId) {
+      foxglove.clientUnadvertise(cancelNavigationChannelId)
+    }
+    cancelNavigationChannelId = null
+    cancelNavigationReleaseTimer = null
+  }, 300)
+}
+
+// ---- 单舵机角度 → /servo_cmd ----
+function onServoCommand({ channel, angle }) {
+  if (servoChannelId && isConnected.value) {
+    foxglove.publishMessage(servoChannelId, {
+      x: Number(channel),
+      y: Number(angle),
+      z: 0.0
+    })
+  }
+}
+
+// ---- 机械臂回正：等待上一个舵机命令被下位机处理后再发下一个 ----
+function onArmHome(angles) {
+  if (!servoChannelId || !isConnected.value || !Array.isArray(angles)) return
+
+  angles.slice(0, 5).forEach((angle, index) => {
+    window.setTimeout(() => {
+      if (!servoChannelId || !isConnected.value) return
+      foxglove.publishMessage(servoChannelId, {
+        x: index + 1,
+        y: Number(angle),
+        z: 0.0
+      })
+    }, index * 1200)
+  })
+}
+
+const isPickingPreset = ref(false)
+const pickedPresetPose = ref(null)
+function onPresetSelected(pose) { pickedPresetPose.value = pose; isPickingPreset.value = false }
+function onExternalGoal() { multiPointMode.value = false; clearWaypoints(); isPickingPreset.value = false }
 
 // ---- 导航目标点设定 ----
 function onGoalSet({ x, y }) {
   if (multiPointMode.value) return
-  if (goalPoseChannelId && isConnected.value) {
-    foxglove.sendGoalPose(goalPoseChannelId, x, y, 0)
-  }
+  sendGoalPose(x, y)
 }
 
 function sendGoalPose(x, y) {
-  if (goalPoseChannelId && isConnected.value) {
-    foxglove.sendGoalPose(goalPoseChannelId, x, y, 0)
+  if (!isConnected.value) return
+  if (!goalPoseChannelId) {
+    goalPoseChannelId = foxglove.clientAdvertise(runtimeTopics.value.goal_pose, 'geometry_msgs/PoseStamped', 'json')
   }
+  foxglove.sendGoalPose(goalPoseChannelId, x, y, 0)
+  if (goalPoseReleaseTimer) clearTimeout(goalPoseReleaseTimer)
+  goalPoseReleaseTimer = setTimeout(() => {
+    if (goalPoseChannelId) foxglove.clientUnadvertise(goalPoseChannelId)
+    goalPoseChannelId = null
+    goalPoseReleaseTimer = null
+  }, 300)
 }
 
 function dispatchNextWaypoint() {
@@ -499,9 +655,17 @@ function onWaypointReached() {
 
 // ---- 初始位置设定 ----
 function onInitialPoseSet({ x, y, yaw }) {
-  if (initialPoseChannelId && isConnected.value) {
-    foxglove.sendInitialPose(initialPoseChannelId, x, y, yaw)
+  if (!isConnected.value) return
+  if (!initialPoseChannelId) {
+    initialPoseChannelId = foxglove.clientAdvertise(runtimeTopics.value.initial_pose, 'geometry_msgs/PoseWithCovarianceStamped', 'json')
   }
+  foxglove.sendInitialPose(initialPoseChannelId, x, y, yaw)
+  if (initialPoseReleaseTimer) clearTimeout(initialPoseReleaseTimer)
+  initialPoseReleaseTimer = setTimeout(() => {
+    if (initialPoseChannelId) foxglove.clientUnadvertise(initialPoseChannelId)
+    initialPoseChannelId = null
+    initialPoseReleaseTimer = null
+  }, 300)
   // 自动退出初始位置模式
   isSettingPose.value = false
 }
@@ -512,6 +676,8 @@ watch(multiPointMode, (enabled) => {
 
 watch(navigationActive, (running) => {
   if (running) {
+    stopKeyboardControl()
+    releaseCmdVelPublisher(0)
     slamMapRef.value?.resetView()
   } else {
     clearWaypoints()
@@ -526,35 +692,74 @@ watch(() => navFeedback.value?.distance_remaining, (distance) => {
   }
 })
 
-// ======================== WASD 键盘控制 ========================
+// ======================== QWEASD 键盘控制 ========================
 const keyboardState = {
+  q: false,
   w: false,
+  e: false,
   a: false,
   s: false,
   d: false
 }
 let keyboardInterval = null
 
-// 线速度上限与角速度上限 (可根据情况修改)
-const MAX_LINEAR_VEL = 0.15
-const MAX_ANGULAR_VEL = 0.8
+const SPEED_SETTINGS_STORAGE_KEY = 'ros2-web-motion-speeds'
+const DEFAULT_LINEAR_VEL = 0.15
+const DEFAULT_ANGULAR_VEL = 0.8
+
+function clampSpeed(value, fallback, max) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return fallback
+  return Math.min(max, Math.max(0.01, number))
+}
+
+function loadSpeedSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SPEED_SETTINGS_STORAGE_KEY) || '{}')
+    return {
+      linear: clampSpeed(saved.linear, DEFAULT_LINEAR_VEL, 3),
+      angular: clampSpeed(saved.angular, DEFAULT_ANGULAR_VEL, 6)
+    }
+  } catch {
+    return { linear: DEFAULT_LINEAR_VEL, angular: DEFAULT_ANGULAR_VEL }
+  }
+}
+
+const initialSpeedSettings = loadSpeedSettings()
+const maxLinearVelocity = ref(initialSpeedSettings.linear)
+const maxAngularVelocity = ref(initialSpeedSettings.angular)
+
+function onSpeedSettingsChange({ linear, angular }) {
+  stopKeyboardControl()
+  maxLinearVelocity.value = clampSpeed(linear, maxLinearVelocity.value, 3)
+  maxAngularVelocity.value = clampSpeed(angular, maxAngularVelocity.value, 6)
+  localStorage.setItem(SPEED_SETTINGS_STORAGE_KEY, JSON.stringify({
+    linear: maxLinearVelocity.value,
+    angular: maxAngularVelocity.value
+  }))
+}
 
 function updateKeyboardControl() {
-  if (!cmdVelChannelId || !isConnected.value) return
+  if (!isConnected.value) return
 
   let linearX = 0
+  let linearY = 0
   let angularZ = 0
 
-  if (keyboardState.w) linearX += MAX_LINEAR_VEL
-  if (keyboardState.s) linearX -= MAX_LINEAR_VEL
-  if (keyboardState.a) angularZ += MAX_ANGULAR_VEL
-  if (keyboardState.d) angularZ -= MAX_ANGULAR_VEL
+  if (keyboardState.w) linearX += maxLinearVelocity.value
+  if (keyboardState.s) linearX -= maxLinearVelocity.value
+  if (keyboardState.q) linearY += maxLinearVelocity.value
+  if (keyboardState.e) linearY -= maxLinearVelocity.value
+  if (keyboardState.a) angularZ += maxAngularVelocity.value
+  if (keyboardState.d) angularZ -= maxAngularVelocity.value
 
-  foxglove.sendTwist(cmdVelChannelId, linearX, angularZ)
+  publishVelocity(linearX, linearY, angularZ)
 }
 
 function stopKeyboardControl(sendStop = true) {
+  keyboardState.q = false
   keyboardState.w = false
+  keyboardState.e = false
   keyboardState.a = false
   keyboardState.s = false
   keyboardState.d = false
@@ -564,17 +769,25 @@ function stopKeyboardControl(sendStop = true) {
     keyboardInterval = null
   }
 
-  if (sendStop && cmdVelChannelId && isConnected.value) {
-    foxglove.sendTwist(cmdVelChannelId, 0, 0)
+  if (sendStop && isConnected.value) {
+    publishVelocity(0, 0, 0)
   }
+}
+
+const MOVEMENT_KEYS = ['q', 'w', 'e', 'a', 's', 'd']
+
+function isEditableTarget(target) {
+  const tagName = target?.tagName
+  return tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT' || target?.isContentEditable
 }
 
 function handleKeyDown(e) {
   // 防止在输入框内打字时触发移动
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+  if (isEditableTarget(e.target) || e.ctrlKey || e.metaKey || e.altKey) return
 
   const key = e.key.toLowerCase()
-  if (['w', 'a', 's', 'd'].includes(key)) {
+  if (MOVEMENT_KEYS.includes(key)) {
+    e.preventDefault()
     if (!keyboardState[key]) {
       keyboardState[key] = true
       
@@ -589,11 +802,12 @@ function handleKeyDown(e) {
 
 function handleKeyUp(e) {
   const key = e.key.toLowerCase()
-  if (['w', 'a', 's', 'd'].includes(key)) {
+  if (MOVEMENT_KEYS.includes(key)) {
+    e.preventDefault()
     keyboardState[key] = false
     
     // 如果所有键都松开了，停止循环并发送一次 0 速度
-    if (!keyboardState.w && !keyboardState.a && !keyboardState.s && !keyboardState.d) {
+    if (!MOVEMENT_KEYS.some((movementKey) => keyboardState[movementKey])) {
       stopKeyboardControl()
     }
   }
@@ -603,8 +817,8 @@ function handleWindowBlur() {
   stopKeyboardControl()
 }
 
-onMounted(() => {
-  loadRuntimeConfig()
+onMounted(async () => {
+  await loadRuntimeConfig()
   handleConnect()
   connectRetryTimer = setInterval(() => {
     if (connectionState.value !== 'connected') {

@@ -43,7 +43,7 @@
         
         <!-- 悬浮操作提示 -->
         <div v-if="isNavigating && !isSettingPose" class="map-overlay-hint hint-goal">
-          {{ multiPointMode ? '双击地图可连续添加航点' : '双击地图设定导航目标点' }}
+          {{ isPickingPreset ? '双击地图选择预设位置（不会开始移动）' : multiPointMode ? '双击地图可连续添加航点' : '双击地图设定导航目标点' }}
         </div>
         <div v-if="isSettingPose" class="map-overlay-hint hint-pose">
           按住地图拖动以设定初始位置和朝向
@@ -121,6 +121,7 @@ const props = defineProps({
   planData: Object,
   isMapping: Boolean,
   isNavigating: Boolean,
+  isPickingPreset: Boolean,
   isSettingPose: Boolean,
   multiPointMode: Boolean,
   waypoints: {
@@ -158,7 +159,7 @@ const settingMsg = ref('')
 const arriveMsg = ref('')
 const singleGoalReachedNotified = ref(false)
 
-const emit = defineEmits(['goal-set', 'waypoint-add', 'waypoint-reached', 'initial-pose-set', 'update:isSettingPose'])
+const emit = defineEmits(['preset-selected', 'goal-set', 'waypoint-add', 'waypoint-reached', 'initial-pose-set', 'update:isSettingPose'])
 const waypointReachThreshold = 0.10
 const reachedWaypointKey = ref('')
 
@@ -640,6 +641,50 @@ watch(() => props.planData, (newData) => {
 // /tf 话题分别发布各段变换，我们需要缓存并组合它们
 
 const tfTree = {}  // { 'parent|child': { translation, rotation } }
+const tfHistory = {} // timestamped transforms used to align Scan and TF
+
+function normalizeFrame(frame) {
+  return String(frame || '').replace(/^\/+/, '')
+}
+
+function stampToSeconds(stamp) {
+  if (!stamp) return null
+  const sec = Number(stamp.sec ?? stamp.secs ?? 0)
+  const nanosec = Number(stamp.nanosec ?? stamp.nsec ?? stamp.nsecs ?? 0)
+  const value = sec + nanosec / 1e9
+  return Number.isFinite(value) && value > 0 ? value : null
+}
+
+function cacheTf(key, tf) {
+  tfTree[key] = tf.transform
+
+  const stamp = stampToSeconds(tf.header?.stamp)
+  if (stamp === null) return
+
+  const history = tfHistory[key] || (tfHistory[key] = [])
+  const previous = history[history.length - 1]
+  if (!previous || previous.stamp !== stamp) {
+    history.push({ stamp, transform: tf.transform })
+  }
+
+  const cutoff = stamp - 5.0
+  while (history.length > 2 && history[0].stamp < cutoff) history.shift()
+}
+
+function getTf(key, stamp = null) {
+  if (stamp === null || !tfHistory[key]?.length) return tfTree[key] || null
+
+  let best = tfHistory[key][0]
+  let bestDelta = Math.abs(best.stamp - stamp)
+  for (const candidate of tfHistory[key]) {
+    const delta = Math.abs(candidate.stamp - stamp)
+    if (delta < bestDelta) {
+      best = candidate
+      bestDelta = delta
+    }
+  }
+  return best.transform
+}
 
 function quatToYaw(q) {
   return Math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
@@ -659,11 +704,12 @@ function composeTf(tfA, tfB) {
 }
 
 /** 从 TF 树中查找从 fromFrame 到 toFrame 的变换（最多 3 层链式查找） */
-function lookupTf(fromFrame, toFrame) {
+function lookupTf(fromFrame, toFrame, stamp = null) {
   // 直接路径
   const directKey = `${fromFrame}|${toFrame}`
-  if (tfTree[directKey]) {
-    const tf = tfTree[directKey]
+  const directTf = getTf(directKey, stamp)
+  if (directTf) {
+    const tf = directTf
     return { x: tf.translation.x, y: tf.translation.y, yaw: quatToYaw(tf.rotation) }
   }
   
@@ -672,8 +718,10 @@ function lookupTf(fromFrame, toFrame) {
     const [parent, child] = key.split('|')
     if (parent === fromFrame) {
       const secondKey = `${child}|${toFrame}`
-      if (tfTree[secondKey]) {
-        return composeTf(tfTree[key], tfTree[secondKey])
+      const firstTf = getTf(key, stamp)
+      const secondTf = getTf(secondKey, stamp)
+      if (firstTf && secondTf) {
+        return composeTf(firstTf, secondTf)
       }
     }
   }
@@ -687,8 +735,10 @@ watch(() => props.tfData, (newData) => {
   
   // 1. 将所有收到的 TF 存入树
   for (const tf of newData.transforms) {
-    const key = `${tf.header.frame_id}|${tf.child_frame_id}`
-    tfTree[key] = tf.transform
+    const parent = normalizeFrame(tf.header.frame_id)
+    const child = normalizeFrame(tf.child_frame_id)
+    const key = `${parent}|${child}`
+    cacheTf(key, tf)
   }
   
   // 2. 查找机器人在地图坐标系中的位置 (map -> base_link)
@@ -704,22 +754,27 @@ watch(() => props.tfData, (newData) => {
   }
 
   // 3. 寻找传感器偏移 (base_link -> laser/base_scan)
-  const scanFrame = props.scanData?.header?.frame_id || 'base_scan'
+  const scanFrame = normalizeFrame(props.scanData?.header?.frame_id || 'base_scan')
   let sOffset = lookupTf('base_link', scanFrame)
   if (!sOffset) sOffset = lookupTf('base_footprint', scanFrame)
   if (sOffset) {
     sensorOffset.value = sOffset
   }
 
+  if (props.scanData) updateLaserPoints(props.scanData)
   requestDraw()
 }, { deep: true })
 
-// 处理雷达数据：计算打击点坐标
-watch(() => props.scanData, (newData) => {
+function updateLaserPoints(newData) {
   if (!newData || !newData.ranges) return
   
   const points = []
-  const pose = robotPose.value || { x: 0, y: 0, yaw: 0 }
+  const scanStamp = stampToSeconds(newData.header?.stamp)
+  let pose = lookupTf('map', 'base_link', scanStamp)
+  if (!pose) pose = lookupTf('map', 'base_footprint', scanStamp)
+  if (!pose) pose = lookupTf('odom', 'base_link', scanStamp)
+  if (!pose) pose = lookupTf('odom', 'base_footprint', scanStamp)
+  pose = pose || robotPose.value || { x: 0, y: 0, yaw: 0 }
   const offset = sensorOffset.value || { x: 0, y: 0, yaw: 0 }
   
   // 1. 计算传感器在地图坐标系中的绝对位置和朝向
@@ -744,6 +799,11 @@ watch(() => props.scanData, (newData) => {
   }
   laserPoints.value = points
   requestDraw()
+}
+
+// 处理雷达数据：使用雷达帧自己的时间戳匹配 TF，避免运动时扫描点向后拖影
+watch(() => props.scanData, (newData) => {
+  updateLaserPoints(newData)
 }, { deep: true })
 
 function autoFit() {
@@ -868,8 +928,16 @@ function onDblClick(e) {
   const info = getEffectiveMapInfo()
   const res = info.resolution
   const origin = info.origin.position
-  const wx = origin.x + canvasX * res
-  const wy = origin.y + (info.height - 1 - canvasY) * res
+  const q = info.origin.orientation || { x: 0, y: 0, z: 0, w: 1 }
+  const mapYaw = Math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
+  const localX = canvasX * res, localY = (info.height - 1 - canvasY) * res
+  const wx = origin.x + localX * Math.cos(mapYaw) - localY * Math.sin(mapYaw)
+  const wy = origin.y + localX * Math.sin(mapYaw) + localY * Math.cos(mapYaw)
+  if (props.isPickingPreset) {
+    if (!props.mapData) return
+    emit('preset-selected', { x: wx, y: wy, yaw: 0 })
+    return
+  }
   if (props.multiPointMode) {
     emit('waypoint-add', { x: wx, y: wy })
   } else {

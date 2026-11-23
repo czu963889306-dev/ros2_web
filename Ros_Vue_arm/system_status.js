@@ -1,5 +1,8 @@
+import { robotModelState } from './robot_model_settings.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
+import { readCameras, readVoiceModule } from './peripheral_status.js';
 
 export function parseCpu(text) {
   const line = text.split('\n').find(line => /^cpu\s/.test(line));
@@ -41,21 +44,25 @@ export async function readCpuTemperature(root = '/sys/class/thermal') {
   return sensor ? Math.round(sensor.value * 10) / 10 : null;
 }
 
-export function installSystemStatus(app) {
+export function installSystemStatus(app, { voiceConfig } = {}) {
   let previous = null, running = false;
-  let snapshot = { cpu_percent: null, memory: null, cpu_temperature_c: null, sampled_at: null };
+  const empty = { cpu_percent: null, memory: null, cpu_temperature_c: null, cameras: null, voice_online: null, sampled_at: null };
+  let snapshot = empty;
   async function sample() {
     if (running) return;
     running = true;
     try {
-      const [cpu, memory, temperature] = await Promise.allSettled([
-        fs.readFile('/proc/stat', 'utf8'), fs.readFile('/proc/meminfo', 'utf8'), readCpuTemperature()
+      const [cpu, memory, temperature, cameras, voice] = await Promise.allSettled([
+        fs.readFile('/proc/stat', 'utf8'), fs.readFile('/proc/meminfo', 'utf8'), readCpuTemperature(),
+        readCameras(), voiceConfig ? readVoiceModule(voiceConfig) : null
       ]);
       const current = cpu.status === 'fulfilled' ? parseCpu(cpu.value) : null;
       snapshot = {
         cpu_percent: cpuPercent(previous, current),
         memory: memory.status === 'fulfilled' ? parseMemory(memory.value) : null,
         cpu_temperature_c: temperature.status === 'fulfilled' ? temperature.value : null,
+        cameras: cameras.status === 'fulfilled' ? cameras.value : null,
+        voice_online: voice.status === 'fulfilled' ? voice.value : null,
         sampled_at: Date.now()
       };
       previous = current;
@@ -63,10 +70,10 @@ export function installSystemStatus(app) {
   }
   sample();
   const timer = setInterval(sample, 2000); timer.unref();
-  app.get('/api/system-status', (req, res) => {
+  app.get('/api/system-status', async (req, res) => {
     res.set('Cache-Control', 'no-store');
     const fresh = snapshot.sampled_at !== null && Date.now() - snapshot.sampled_at < 8000;
-    res.json({ success: true, ...(fresh ? snapshot : { cpu_percent: null, memory: null, cpu_temperature_c: null, sampled_at: null }),
-      server_time: new Date().toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' });
+    res.json({ success: true, hostname: os.hostname(), ros_domain_id: Number(process.env.ROS_DOMAIN_ID ?? 0), ...(fresh ? snapshot : empty),
+      robot_model: await robotModelState().catch(() => null), server_time: new Date().toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' });
   });
 }

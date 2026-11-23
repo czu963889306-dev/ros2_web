@@ -1,6 +1,6 @@
 #!/bin/bash
 # =================================================================
-# 机器人中控台 (Robot Control Console) 启动脚本
+# 出云中控台启动脚本
 # =================================================================
 
 # 获取脚本所在目录
@@ -8,7 +8,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WORKSPACE_DIR="$SCRIPT_DIR"
 
 echo "---------------------------------------------------"
-echo "正在启动机器人中控台..."
+echo "正在启动出云中控台..."
 echo "工作目录: $WORKSPACE_DIR"
 echo "---------------------------------------------------"
 
@@ -107,11 +107,11 @@ if [ -f "server.js" ]; then
         
         echo ""
         echo "---------------------------------------------------"
-        echo "正在停止机器人中控台服务..."
+        echo "正在停止出云中控台服务..."
         
         # 释放所有由后端启动的 ROS 任务 (静默执行)
         curl -s -X POST http://localhost:3000/api/stop_task/startup > /dev/null 2>&1
-        curl -s -X POST http://localhost:3000/api/stop_task/mapping > /dev/null 2>&1
+        curl -s -X POST 'http://localhost:3000/api/stop_task/mapping?scope=console-processes' > /dev/null 2>&1
         
         # 杀掉后端进程
         if [ -n "$BACKEND_PID" ]; then

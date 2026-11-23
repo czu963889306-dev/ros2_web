@@ -52,7 +52,7 @@
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps({ connected: Boolean })
-const emit = defineEmits(['mappingStarted', 'update:isMapping', 'dialogOpened'])
+const emit = defineEmits(['mappingStarted', 'update:isMapping', 'dialogOpened', 'algorithm'])
 const isMapping = ref(false)
 const isLoading = ref(false)
 const activeLabel = ref('')
@@ -72,7 +72,8 @@ function updateStatus(data) {
   isMapping.value = Boolean(data.isRunning)
   activeLabel.value = data.label || data.algorithm || ''
   emit('update:isMapping', isMapping.value)
-  if (data.error) errorMsg.value = data.error
+  emit('algorithm', data.isRunning ? data.algorithm : null, data.mapSession ?? null)
+  errorMsg.value = data.error || ''
 }
 
 async function checkStatus() {

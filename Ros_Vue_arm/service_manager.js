@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 const exec = promisify(execFile);
 const fault = (message, status = 400) => Object.assign(new Error(message), { status });
 const ID = /^[0-9a-f-]{36}$/;
-const labels = { 'micro-ros-agent.service':'Micro-ROS 通信', 'leap_ros_bringup.service':'机器人底盘', 'chuyun_wifi_config.service':'Wi-Fi 配置服务', 'ros2-web-topic-throttle.service':'网页话题降频', 'ustreamer-camera.service':'摄像头推流', 'ros2-web.service':'ROS 网页中控台', 'voice-assistant.service':'语音助手' };
+const labels = { 'chuyun-arm-bridge.service':'机械臂桥接', 'micro-ros-agent.service':'Micro-ROS 通信', 'leap_ros_bringup.service':'机器人底盘', 'chuyun_wifi_config.service':'Wi-Fi 配置服务', 'ros2-web-topic-throttle.service':'网页话题降频', 'ustreamer-camera.service':'摄像头推流', 'ros2-web.service':'ROS 网页中控台', 'voice-assistant.service':'语音助手' };
 export class ServiceManager {
   constructor(directory, options = {}) {
     this.script = options.script || '/root/ros_service_ctl.sh';

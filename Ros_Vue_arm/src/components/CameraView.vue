@@ -68,8 +68,17 @@
           @keyup.enter="applyUrl"
         >
         <button class="btn camera-btn" type="button" @click="applyUrl">应用</button>
+        <button class="btn camera-btn" type="button" :aria-pressed="!autoMode && activePath === 'yolo'" @click="selectYolo">YOLO画面</button>
         <button class="btn camera-btn camera-btn-secondary" type="button" @click="enableAutoDetect">自动</button>
         <button class="btn camera-btn camera-btn-secondary" type="button" @click="reloadStream">刷新</button>
+      </div>
+      <div class="camera-controls camera-algorithm-controls">
+        <label for="yolo-algorithm">检测算法</label>
+        <select id="yolo-algorithm" :value="algorithmRequested" :disabled="algorithmSwitching || !algorithmAvailable" @change="switchAlgorithm($event.target.value)">
+          <option v-for="algorithm in algorithms" :key="algorithm" :value="algorithm">{{ algorithm.replace('yolo', 'YOLO') }}</option>
+        </select>
+        <span v-if="algorithmSwitching">切换中…</span>
+        <span v-else-if="algorithmError" role="status">{{ algorithmError }}</span>
       </div>
     </div>
   </div>
@@ -137,6 +146,47 @@ const sourceState = ref('detecting')
 const cameraMessage = ref('正在检测摄像头通道...')
 const isExpanded = ref(false)
 let discoveryTimer = null
+const algorithms = ref([])
+const algorithmRequested = ref('yolov8')
+const algorithmSwitching = ref(false)
+const algorithmAvailable = ref(false)
+const algorithmError = ref('')
+const algorithmUrl = `http://${window.location.hostname}:8090/algorithm`
+let algorithmBusy = false
+async function refreshAlgorithm() {
+  if (algorithmBusy) return
+  try {
+    const response = await fetch(algorithmUrl, { cache: 'no-store' })
+    if (!response.ok) throw new Error('检测服务不可用')
+    const data = await response.json()
+    algorithms.value = data.available
+    algorithmAvailable.value = true
+    algorithmRequested.value = data.requested
+    algorithmSwitching.value = data.switching
+    algorithmError.value = data.error || ''
+  } catch {
+    algorithmAvailable.value = false
+    algorithmSwitching.value = false
+  }
+}
+async function switchAlgorithm(algorithm) {
+  algorithmBusy = true
+  algorithmSwitching.value = true
+  algorithmError.value = ''
+  try {
+    const response = await fetch(algorithmUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ algorithm }) })
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.error || '切换失败')
+    algorithmRequested.value = data.requested
+    selectYolo()
+  } catch (error) {
+    algorithmError.value = error.message || '切换失败'
+    algorithmSwitching.value = false
+  } finally {
+    algorithmBusy = false
+    await refreshAlgorithm()
+  }
+}
 
 const showPlaceholder = computed(() => {
   if (!activeUrl.value) return true
@@ -144,7 +194,7 @@ const showPlaceholder = computed(() => {
 })
 
 const activeSourceText = computed(() => {
-  if (activeMode.value === 'webrtc') return `WebRTC${activePath.value ? ` · ${activePath.value}` : ''}`
+  if (activeMode.value === 'webrtc') return `WebRTC${activePath.value ? ` · ${['yolo', 'yolov8'].includes(activePath.value) ? 'YOLO' : activePath.value}` : ''}`
   if (activeMode.value === 'image') return 'HTTP / MJPEG'
   return '尚未选择通道'
 })
@@ -209,10 +259,34 @@ function normalizeManualUrl(url) {
   return `http://${window.location.hostname}:8889/${path}`
 }
 
+function selectYolo() {
+  const url = new URL('/yolo/', window.location.origin)
+  url.port = '8889'
+  autoMode.value = false
+  draftUrl.value = url.href
+  setSource('webrtc', url.href, 'yolo')
+  detectStreams()
+}
+
 function applyUrl() {
   if (!draftUrl.value) {
     enableAutoDetect()
     return
+  }
+  if (/^\/?yolo(?:v8)?\/?$/i.test(draftUrl.value)) {
+    selectYolo()
+    return
+  }
+  try {
+    const url = new URL(draftUrl.value)
+    if (url.hostname === window.location.hostname &&
+        ((url.port === '8090' && ['/', '/live.mp4'].includes(url.pathname)) ||
+         (url.port === '8889' && /^\/yolo(?:v8)?(?:\/whep)?\/?$/.test(url.pathname)))) {
+      selectYolo()
+      return
+    }
+  } catch {
+    // Channel names and relative paths are also accepted.
   }
   autoMode.value = false
   const mode = isWebRtcUrl(draftUrl.value) ? 'webrtc' : 'image'
@@ -262,21 +336,26 @@ function onImageError() {
 }
 
 async function detectStreams() {
-  if (!autoMode.value || !props.discoveryUrl) return
+  if (!props.discoveryUrl || (!autoMode.value && activePath.value !== 'yolo')) return
   try {
     const response = await fetch(props.discoveryUrl, { cache: 'no-store' })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const data = await response.json()
-    if (!autoMode.value) return
     const streams = Array.isArray(data.streams) ? data.streams : []
+    if (!autoMode.value) {
+      if (activePath.value === 'yolo') {
+        sourceState.value = streams.some(s => s?.name === 'yolo' && s.ready) ? 'online' : 'detecting'
+      }
+      return
+    }
     // 仅把 MediaMTX 已经 ready 的路径当作 WebRTC 候选；未 ready 时必须走 HTTP 回退。
-    const selected = streams.find((stream) => stream && stream.ready === true)
+    const selected = streams.find(stream => stream?.name === 'yolo' && stream.ready) || streams.find((stream) => stream && stream.ready === true)
 
     if (selected) {
       const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:'
       const port = Number(data.webrtcPort) || 8889
       const encodedPath = selected.name.split('/').map(encodeURIComponent).join('/')
-      const url = `${protocol}//${window.location.hostname}:${port}/${encodedPath}`
+      const url = `${protocol}//${window.location.hostname}:${port}/${encodedPath}/`
       setSource('webrtc', url, selected.name, Boolean(selected.ready))
       draftUrl.value = url
       return
@@ -292,6 +371,7 @@ async function detectStreams() {
       cameraMessage.value = '未发现可用的摄像头通道'
     }
   } catch (error) {
+    if (!autoMode.value) return
     if (props.defaultUrl) {
       setSource('image', props.defaultUrl, '', true)
       draftUrl.value = props.defaultUrl
@@ -311,7 +391,8 @@ watch(() => props.defaultUrl, (url) => {
 
 onMounted(() => {
   detectStreams()
-  discoveryTimer = window.setInterval(detectStreams, 4000)
+  refreshAlgorithm()
+  discoveryTimer = window.setInterval(() => { detectStreams(); refreshAlgorithm() }, 2000)
   window.addEventListener('keydown', onWindowKeydown)
 })
 

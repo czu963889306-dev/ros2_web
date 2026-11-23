@@ -1,0 +1,216 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot name="leap_ros_max">
+  <material name="silver">
+    <color rgba="0.65 0.68 0.70 1.0" />
+  </material>
+  <material name="dark_gray">
+    <color rgba="0.08 0.08 0.08 1.0" />
+  </material>
+  <material name="matte_black">
+    <color rgba="0.01 0.01 0.01 1.0" />
+  </material>
+  <link name="base_footprint" />
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint" />
+    <child link="base_link" />
+    <origin xyz="0 0 0.1345902" rpy="0 0 0" />
+  </joint>
+  <link name="base_link">
+    <visual>
+      <origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_max/urdf/base.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="arm_gray">
+        <color rgba="0.65 0.7 0.75 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_max/urdf/base.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_max/urdf/cover.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="arm_gray">
+        <color rgba="0.65 0.7 0.75 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_max/urdf/cover.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_max/v2/wheel_motor_1.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_max/v2/wheel_motor_1.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_max/v2/wheel_motor_2.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_max/v2/wheel_motor_2.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_max/v2/wheel_motor_3.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_max/v2/wheel_motor_3.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_max/v2/wheel_motor_4.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_max/v2/wheel_motor_4.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_max/mecanum_pair_1.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="mecanum_gray">
+        <color rgba="0.30 0.32 0.34 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_max/mecanum_pair_1.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_max/mecanum_pair_2.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="mecanum_gray">
+        <color rgba="0.30 0.32 0.34 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_max/mecanum_pair_2.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="laser_frame">
+    <visual>
+      <origin xyz="0.02495 -0.000062 -0.07295" rpy="0 0 1.57079632679" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros/lidar.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="matte_black" />
+    </visual>
+    <collision>
+      <origin xyz="0.02495 -0.000062 -0.07295" rpy="0 0 1.57079632679" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros/lidar.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="laser_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="laser_frame" />
+    <origin xyz="0.0535 0 0.01245" rpy="0 0 0" />
+  </joint>
+  <link name="camera_link">
+    <visual>
+      <origin xyz="-0.045466 0.000603 -0.061658" rpy="0 0 1.57079632679" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros/camera.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="matte_black" />
+    </visual>
+    <collision>
+      <origin xyz="-0.045466 0.000603 -0.061658" rpy="0 0 1.57079632679" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros/camera.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="camera_link" />
+    <origin xyz="0.110 0 -0.033" rpy="0 0 0" />
+  </joint>
+  <link name="battery_link">
+    <visual>
+      <origin xyz="0.027 0 -0.0145" rpy="0 0 1.57079632679" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros/battery.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="dark_gray" />
+    </visual>
+  </link>
+  <joint name="battery_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="battery_link" />
+    <origin xyz="0.055 0 -0.080" rpy="0 0 0" />
+  </joint>
+  <link name="controller_link">
+    <visual>
+      <origin xyz="0.027 0.000108 -0.027255" rpy="0 0 1.57079632679" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_max/controller_no_standoffs.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="silver" />
+    </visual>
+  </link>
+  <joint name="controller_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="controller_link" />
+    <origin xyz="-0.046 0 0.000255" rpy="0 0 0" />
+  </joint>
+
+  <!-- Preserve the installed board sensor poses relative to base_footprint. -->
+  <link name="imu_link"/>
+  <joint name="imu_link_mount" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0 0 -0.0425402" rpy="0 0 0"/>
+  </joint>
+</robot>

@@ -6,10 +6,10 @@
     <div class="card-body">
       <!-- 地图选择 -->
       <div class="nav-section">
-        <label class="nav-label">选择地图</label>
+        <label class="nav-label" for="nav-map">选择地图</label>
         <div class="map-select-group">
           <select
-            class="map-select"
+            id="nav-map" class="map-select"
             v-model="selectedMap"
             :disabled="isNavigating || isLoading"
           >
@@ -21,7 +21,10 @@
           <button class="btn-icon" @click="loadMaps" :disabled="isLoading" title="刷新列表">
             <span :class="['refresh-icon', { spinning: isLoading }]">↻</span>
           </button>
+          <button type="button" class="map-delete" @click="openDelete" :disabled="isLoading || !deletableMaps.length"
+            :title="isNavigating ? '删除未用于当前导航的地图' : '删除地图'">删除</button>
         </div>
+        <div v-if="mapNotice" class="nav-hint" role="status">{{ mapNotice }}</div>
         <div v-if="maps.length === 0 && !isLoading" class="nav-hint">
           暂无地图，请先完成建图并保存
         </div>
@@ -84,10 +87,10 @@
 
       <!-- 操作提示 -->
       <div v-if="isNavigating && !isSettingPose" class="nav-hint goal-hint" style="margin-top:4px">
-        {{ multiPointMode ? '双击地图连续添加航点，系统将自动依次执行' : '双击地图设定导航目标点' }}
+        {{ multiPointMode ? '每个航点选一次 2D Goal Pose，拖动设置到达朝向，按顺序执行。' : '选择地图上的 2D Goal Pose，拖动设置目标和朝向。' }}
       </div>
       <div v-if="isSettingPose" class="nav-hint pose-hint">
-        🟡 按住地图拖动以设定位置和朝向
+        按住地图设置初始位置，沿绿色箭头拖动以指定朝向。
       </div>
 
       <NavigationPresets :map-path="selectedMap" :is-navigating="isNavigating"
@@ -101,6 +104,20 @@
   </div>
 
   <Teleport to="body">
+    <dialog ref="deleteDialog" class="drive-dialog" aria-labelledby="map-delete-title" @cancel="onDialogCancel" @keydown.stop @keyup.stop>
+      <h2 id="map-delete-title" class="drive-dialog-title">删除地图</h2>
+      <label for="delete-map-name" class="nav-label">地图名称</label>
+      <select id="delete-map-name" class="map-select" v-model="deleteName" :disabled="isLoading">
+        <option v-for="m in deletableMaps" :key="m.path" :value="m.name">{{ m.name }}</option>
+      </select>
+      <p class="drive-dialog-hint">将删除所选地图及其保存的语音导航点。此操作无法撤销。</p>
+      <p v-if="isNavigating" class="nav-hint">导航正在使用的地图已从可删除列表中排除。</p>
+      <p v-if="deleteError" role="alert" class="error-message">{{ deleteError }}</p>
+      <div class="dialog-actions">
+        <button class="drive-dialog-cancel" :disabled="isLoading" @click="deleteDialog.close()">取消</button>
+        <button class="btn btn-disconnect" :disabled="isLoading || !deletableMaps.some(m => m.name === deleteName)" @click="deleteMap">确认删除</button>
+      </div>
+    </dialog>
     <dialog ref="navigationDialog" class="drive-dialog" aria-labelledby="drive-dialog-title"
       @cancel="onDialogCancel" @keydown.stop @keyup.stop>
       <h2 id="drive-dialog-title" class="drive-dialog-title">选择导航方式</h2>
@@ -139,6 +156,7 @@ import NavigationPresets from './NavigationPresets.vue'
 const props = defineProps({
   connected: Boolean,
   isPickingPreset: Boolean,
+  isSettingPose: Boolean,
   pickedPresetPose: Object,
   multiPointMode: {
     type: Boolean,
@@ -163,7 +181,9 @@ const isLoading = ref(false)
 const errorMsg = ref('')
 const maps = ref([])
 const selectedMap = ref('')
-const isSettingPose = ref(false)
+const activeMapPath = ref('')
+const deleteDialog = ref(null), deleteName = ref(''), deleteError = ref(''), mapNotice = ref('')
+const deletableMaps = computed(() => maps.value.filter(m => m.path !== activeMapPath.value))
 const multiPointMode = ref(props.multiPointMode)
 const navigationDialog = ref(null)
 const selectedEngine = ref('lite')
@@ -177,7 +197,8 @@ let statusPending = false
 function updateStatus(data) {
   isNavigating.value = Boolean(data.isRunning)
   activeLabel.value = data.label || data.engine || ''
-  if (data.isRunning && data.mapPath) selectedMap.value = data.mapPath
+  activeMapPath.value = data.isRunning ? data.mapPath || '' : ''
+  if (activeMapPath.value) selectedMap.value = activeMapPath.value
   if (data.isRunning && data.engine) emit('navigationEngine', data.engine)
   emit('update:isNavigating', isNavigating.value)
   if (data.error) errorMsg.value = data.error
@@ -193,17 +214,40 @@ async function loadMaps() {
   try {
     const res = await fetch(`${API_BASE}/list_maps`)
     const data = await res.json()
-    maps.value = data.maps || []
-    if (maps.value.length > 0 && !selectedMap.value) {
-      // 自动选择最新的地图（最后一个，按字母排序，时间戳格式会是最新的）
-      selectedMap.value = maps.value[maps.value.length - 1].path
-    }
+    if (!res.ok || !Array.isArray(data.maps)) throw Error('无法加载地图列表')
+    maps.value = data.maps
+    if (!maps.value.some(m => m.path === selectedMap.value))
+      selectedMap.value = maps.value.at(-1)?.path || ''
   } catch (err) {
     console.error('加载地图列表失败:', err)
     errorMsg.value = '无法加载地图列表'
   } finally {
     isLoading.value = false
   }
+}
+
+function openDelete() {
+  const candidate = deletableMaps.value.find(m => m.path === selectedMap.value) || deletableMaps.value[0]
+  if (!candidate || isLoading.value) return
+  deleteName.value = candidate.name
+  deleteError.value = ''; mapNotice.value = ''
+  emit('dialogOpened')
+  deleteDialog.value.showModal()
+}
+
+async function deleteMap() {
+  if (isLoading.value || !deletableMaps.value.some(m => m.name === deleteName.value)) return
+  const name = deleteName.value
+  isLoading.value = true; revision++
+  try {
+    const res = await fetch(`${API_BASE}/maps/${encodeURIComponent(name)}`, { method: 'DELETE', headers: { 'X-Map-Delete': '1' } })
+    const data = await res.json()
+    if (!res.ok || !data.success) throw Error(data.error || '删除地图失败')
+    deleteDialog.value.close()
+    mapNotice.value = '已删除地图「' + name + '」'
+    await loadMaps()
+  } catch (err) { deleteError.value = err.message }
+  finally { isLoading.value = false }
 }
 
 async function checkStatus() {
@@ -251,10 +295,7 @@ async function startNavigation() {
 }
 
 function exitNavigationModes() {
-  if (isSettingPose.value) {
-    isSettingPose.value = false
-    emit('update:isSettingPose', false)
-  }
+  if (props.isSettingPose) emit('update:isSettingPose', false)
   if (multiPointMode.value) {
     multiPointMode.value = false
     emit('update:multiPointMode', false)
@@ -291,8 +332,7 @@ function externalGoal() { exitNavigationModes(); emit('external-goal') }
 
 function togglePoseMode() {
   emit('pick-preset', false)
-  isSettingPose.value = !isSettingPose.value
-  emit('update:isSettingPose', isSettingPose.value)
+  emit('update:isSettingPose', !props.isSettingPose)
 }
 
 function toggleMultiPointMode() {
@@ -312,7 +352,7 @@ watch(() => props.multiPointMode, (value) => {
   multiPointMode.value = value
 })
 
-watch(() => props.connected, value => { if (!value) navigationDialog.value?.close() })
+watch(() => props.connected, value => { if (!value) { navigationDialog.value?.close(); deleteDialog.value?.close() } })
 onMounted(async () => {
   await loadMaps()
   await checkStatus()
@@ -344,7 +384,12 @@ onUnmounted(() => {
   align-items: center;
 }
 
+.map-delete { align-self:stretch; padding:0 8px; border:1px solid #efc6c6; border-radius:var(--radius-sm); color:#b42323; background:white; cursor:pointer; white-space:nowrap; }
+.map-delete:disabled { opacity:.45; cursor:not-allowed; }
+#map-delete-title { margin-bottom:12px; }
+#delete-map-name { width:100%; }
 .map-select {
+  min-width: 0;
   flex: 1;
   padding: 8px 10px;
   background: #ffffff;

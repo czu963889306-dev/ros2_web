@@ -1,0 +1,656 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot name="leap_ros_pro">
+  <link name="base_footprint" />
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint" />
+    <child link="base_link" />
+    <origin xyz="0 0 0.1345902" rpy="0 0 0" />
+  </joint>
+  <link name="base_link">
+    <visual>
+      <origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/base.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="arm_gray">
+        <color rgba="0.65 0.7 0.75 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/base.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/cover.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="arm_gray">
+        <color rgba="0.65 0.7 0.75 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/cover.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/base_plate_0.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="arm_gray">
+        <color rgba="0.65 0.7 0.75 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/base_plate_0.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/base_plate_1.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="arm_gray">
+        <color rgba="0.65 0.7 0.75 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/base_plate_1.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/base_plate_2.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="arm_gray">
+        <color rgba="0.65 0.7 0.75 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/base_plate_2.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/base_plate_3.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="arm_gray">
+        <color rgba="0.65 0.7 0.75 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/base_plate_3.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/base_plate_4.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="arm_gray">
+        <color rgba="0.65 0.7 0.75 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/base_plate_4.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/base_plate_5.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="arm_gray">
+        <color rgba="0.65 0.7 0.75 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.00000 -0.00000 -0.00000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/base_plate_5.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/lidar.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/lidar.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/bearing.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/bearing.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/fasteners.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/fasteners.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/servo_1.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/servo_1.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_max/mecanum_pair_1.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="mecanum_gray">
+        <color rgba="0.30 0.32 0.34 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_max/mecanum_pair_1.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_max/mecanum_pair_2.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="mecanum_gray">
+        <color rgba="0.30 0.32 0.34 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_max/mecanum_pair_2.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/wheel_motor_1.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/wheel_motor_1.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/wheel_motor_2.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/wheel_motor_2.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/wheel_motor_3.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/wheel_motor_3.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/wheel_motor_4.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/wheel_motor_4.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="link_1">
+    <visual>
+      <origin xyz="-0.05750 -0.00060 -0.04250" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/arm_part_1.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="arm_gray">
+        <color rgba="0.65 0.7 0.75 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.05750 -0.00060 -0.04250" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/arm_part_1.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="-0.057500 -0.000600 -0.042500" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/servo_2.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.057500 -0.000600 -0.042500" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/servo_2.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_1" type="revolute">
+    <parent link="base_link" />
+    <child link="link_1" />
+    <origin xyz="0.05750 0.00060 0.04250" rpy="0 0 0" />
+    <axis xyz="0 0 1" />
+    <limit lower="-1.57" upper="1.57" effort="1.0" velocity="0.5" />
+  </joint>
+  <link name="link_2">
+    <visual>
+      <origin xyz="-0.05775 -0.00035 -0.08551" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/arm_part_2.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="arm_gray">
+        <color rgba="0.65 0.7 0.75 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.05775 -0.00035 -0.08551" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/arm_part_2.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="-0.057750 -0.000350 -0.085510" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/servo_3.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.057750 -0.000350 -0.085510" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/servo_3.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_2" type="revolute">
+    <parent link="link_1" />
+    <child link="link_2" />
+    <origin xyz="0.00025 -0.00025 0.04301" rpy="0 0 0" />
+    <axis xyz="0 1 0" />
+    <limit lower="-1.57" upper="1.57" effort="1.0" velocity="0.5" />
+  </joint>
+  <link name="link_3">
+    <visual>
+      <origin xyz="-0.06264 -0.00011 -0.18853" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/arm_part_3.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="arm_gray">
+        <color rgba="0.65 0.7 0.75 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.06264 -0.00011 -0.18853" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/arm_part_3.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="-0.062640 -0.000110 -0.188530" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/servo_4.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.062640 -0.000110 -0.188530" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/servo_4.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_3" type="revolute">
+    <parent link="link_2" />
+    <child link="link_3" />
+    <origin xyz="0.00489 -0.00024 0.10302" rpy="0 0 0" />
+    <axis xyz="0 1 0" />
+    <limit lower="-1.57" upper="1.57" effort="1.0" velocity="0.5" />
+  </joint>
+  <link name="link_4">
+    <visual>
+      <origin xyz="-0.06733 -0.00057 -0.28992" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/arm_part_4.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="arm_gray">
+        <color rgba="0.65 0.7 0.75 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.06733 -0.00057 -0.28992" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/urdf/arm_part_4.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_4" type="revolute">
+    <parent link="link_3" />
+    <child link="link_4" />
+    <origin xyz="0.00469 0.00046 0.10139" rpy="0 0 0" />
+    <axis xyz="0 1 0" />
+    <limit lower="-1.57" upper="1.57" effort="1.0" velocity="0.5" />
+  </joint>
+  <link name="tool0" />
+  <joint name="tool_fixed" type="fixed">
+    <parent link="link_4" />
+    <child link="tool0" />
+    <origin xyz="0 0 0.06312" rpy="0 0 0" />
+  </joint>
+  <link name="camera_link">
+    <visual>
+      <origin xyz="-0.030000 0.000000 -0.365000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/camera.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.030000 0.000000 -0.365000" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/camera.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="camera_link_joint" type="fixed">
+    <parent link="link_4" />
+    <child link="camera_link" />
+    <origin xyz="-0.037330 -0.000570 0.075080" rpy="0 0 0" />
+  </joint>
+  <link name="gripper_base">
+    <visual>
+      <origin xyz="-0.062230 -0.000494 -0.378436" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/gripper_body.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.062230 -0.000494 -0.378436" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/gripper_body.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin xyz="-0.062230 -0.000494 -0.378436" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/servo_gripper.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.062230 -0.000494 -0.378436" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/servo_gripper.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="gripper_base_joint" type="fixed">
+    <parent link="link_4" />
+    <child link="gripper_base" />
+    <origin xyz="-0.005100 -0.000076 0.088516" rpy="0 0 0" />
+  </joint>
+  <link name="gripper_drive_left">
+    <visual>
+      <origin xyz="-0.062230 0.013256 -0.378436" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/gripper_drive_left.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.062230 0.013256 -0.378436" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/gripper_drive_left.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="gripper_drive_left_joint" type="revolute">
+    <parent link="gripper_base" />
+    <child link="gripper_drive_left" />
+    <origin xyz="0.000000 -0.013750 0.000000" rpy="0 0 0" />
+    <axis xyz="1 0 0" />
+    <limit lower="-0.25" upper="0.25" velocity="0.5" effort="1" />
+  </joint>
+  <link name="gripper_drive_right">
+    <visual>
+      <origin xyz="-0.062230 -0.014244 -0.378435" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/gripper_drive_right.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.062230 -0.014244 -0.378435" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/gripper_drive_right.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="gripper_drive_right_joint" type="revolute">
+    <parent link="gripper_base" />
+    <child link="gripper_drive_right" />
+    <origin xyz="0.000000 0.013750 -0.000001" rpy="0 0 0" />
+    <axis xyz="1 0 0" />
+    <limit lower="-0.25" upper="0.25" velocity="0.5" effort="1" />
+    <mimic joint="gripper_drive_left_joint" multiplier="-1" offset="0" />
+  </joint>
+  <link name="gripper_follower_left">
+    <visual>
+      <origin xyz="-0.061830 0.003506 -0.397981" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/gripper_follower_left.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.061830 0.003506 -0.397981" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/gripper_follower_left.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="gripper_follower_left_joint" type="revolute">
+    <parent link="gripper_base" />
+    <child link="gripper_follower_left" />
+    <origin xyz="-0.000400 -0.004000 0.019545" rpy="0 0 0" />
+    <axis xyz="1 0 0" />
+    <limit lower="-0.25" upper="0.25" velocity="0.5" effort="1" />
+    <mimic joint="gripper_drive_left_joint" multiplier="1" offset="0" />
+  </joint>
+  <link name="gripper_follower_right">
+    <visual>
+      <origin xyz="-0.061830 -0.004495 -0.397981" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/gripper_follower_right.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.061830 -0.004495 -0.397981" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/gripper_follower_right.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="gripper_follower_right_joint" type="revolute">
+    <parent link="gripper_base" />
+    <child link="gripper_follower_right" />
+    <origin xyz="-0.000400 0.004001 0.019545" rpy="0 0 0" />
+    <axis xyz="1 0 0" />
+    <limit lower="-0.25" upper="0.25" velocity="0.5" effort="1" />
+    <mimic joint="gripper_drive_left_joint" multiplier="-1" offset="0" />
+  </joint>
+  <link name="finger_left">
+    <visual>
+      <origin xyz="-0.066730 0.028666 -0.404176" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/finger_left.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.066730 0.028666 -0.404176" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/finger_left.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="finger_left_joint" type="revolute">
+    <parent link="gripper_drive_left" />
+    <child link="finger_left" />
+    <origin xyz="0.004500 -0.015410 0.025740" rpy="0 0 0" />
+    <axis xyz="1 0 0" />
+    <limit lower="-0.25" upper="0.25" velocity="0.5" effort="1" />
+    <mimic joint="gripper_drive_left_joint" multiplier="-1" offset="0" />
+  </joint>
+  <link name="finger_right">
+    <visual>
+      <origin xyz="-0.066730 -0.019033 -0.408051" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/finger_right.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="component">
+        <color rgba="0.25 0.45 0.65 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.066730 -0.019033 -0.408051" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros_pro/v2/finger_right.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="finger_right_joint" type="revolute">
+    <parent link="gripper_drive_right" />
+    <child link="finger_right" />
+    <origin xyz="0.004500 0.004789 0.029616" rpy="0 0 0" />
+    <axis xyz="1 0 0" />
+    <limit lower="-0.25" upper="0.25" velocity="0.5" effort="1" />
+    <mimic joint="gripper_drive_left_joint" multiplier="1" offset="0" />
+  </joint>
+  <link name="grasp_frame" />
+  <joint name="grasp_frame_joint" type="fixed">
+    <parent link="gripper_base" />
+    <child link="grasp_frame" />
+    <origin xyz="0.0045 -0.005494 0.067564" rpy="0 0 0" />
+  </joint>
+
+  <!-- Preserve the installed board sensor poses relative to base_footprint. -->
+  <link name="imu_link"/>
+  <joint name="imu_link_mount" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0 0 -0.0425402" rpy="0 0 0"/>
+  </joint>
+  <link name="laser_frame"/>
+  <joint name="laser_frame_mount" type="fixed">
+    <parent link="base_link"/>
+    <child link="laser_frame"/>
+    <origin xyz="-0.0227 0.000062 -0.0088402" rpy="0 0 0"/>
+  </joint>
+</robot>

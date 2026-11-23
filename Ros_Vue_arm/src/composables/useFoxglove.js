@@ -1,9 +1,13 @@
+import {modelDescriptionTopic,modelStaticTopic} from './robotDisplayModel.js'
 /**
  * Foxglove WebSocket v1 协议通信模块
  * 处理与 foxglove_bridge 的连接、话题订阅、消息发布
  */
 import { ref, reactive, readonly } from 'vue'
 import { readBatteryState } from './battery.js'
+import { readPointCloud } from './pointCloud.js'
+import { readParticleCloud } from './particleCloud.js'
+import { costmapServices } from './costmapServices.js'
 
 // ======================== 状态 ========================
 const connectionState = ref('disconnected') // disconnected | connecting | connected | error
@@ -14,14 +18,32 @@ const errorMessage = ref('')
 
 // ======================== 内部变量 ========================
 let ws = null
+const costmaps = costmapServices(frame => ws.send(frame))
 let nextClientChannelId = 1
 let nextSubscriptionId = 1
 const subscriptionCallbacks = new Map() // subscriptionId → callback(parsedJSON)
 const subscriptionIdToChannelId = new Map() // subscriptionId → channelId
+const wireByChannel = new Map()
+const listenersByWire = new Map()
+const lastSampleByWire = new Map()
 const clientChannels = new Map()        // clientChannelId → {topic, ...}
 let reconnectTimer = null
 let reconnectDelayMs = 0
 let lastUrl = ''
+let deviceClockOffset = null
+
+function syncDeviceClock(serverTime) {
+    const time = Date.parse(serverTime)
+    if (Number.isFinite(time)) deviceClockOffset = time - performance.now()
+}
+
+function poseStamp() {
+    const sameDevice = ws && new URL(ws.url).hostname === window.location.hostname
+    const ms = sameDevice && deviceClockOffset !== null
+        ? Math.floor(performance.now() + deviceClockOffset)
+        : Date.now()
+    return { sec: Math.floor(ms / 1000), nanosec: (ms % 1000) * 1e6 }
+}
 
 // ======================== 连接管理 ========================
 
@@ -108,8 +130,13 @@ function scheduleReconnect() {
 }
 
 function cleanup() {
+    costmaps.disconnect()
     availableChannels.clear()
+    wireByChannel.clear()
+    lastSampleByWire.clear()
+    listenersByWire.clear()
     subscriptionCallbacks.clear()
+    subscriptionIdToChannelId.clear()
     clientChannels.clear()
     nextClientChannelId = 1
     nextSubscriptionId = 1
@@ -134,7 +161,13 @@ function handleJsonMessage(msg) {
             console.log(`[Foxglove] 状态 [${msg.level}]: ${msg.message}`)
             break
         case 'advertiseServices':
-            // 忽略服务列表通知，避免显示未知消息警告
+            costmaps.advertise(msg.services)
+            break
+        case 'unadvertiseServices':
+            costmaps.unadvertise(msg.serviceIds)
+            break
+        case 'serviceCallFailure':
+            costmaps.finish(msg.serviceId, msg.callId, msg.message || '服务调用失败')
             break
         default:
             console.log('[Foxglove] 未知的 JSON 消息:', msg.op)
@@ -186,6 +219,10 @@ function handleBinaryMessage(buffer) {
     const view = new DataView(buffer)
     const opcode = view.getUint8(0)
 
+    if (opcode === 0x03) {
+        costmaps.response(view)
+        return
+    }
     if (opcode === 0x01) {
         // Message Data
         const subscriptionId = view.getUint32(1, true) // little-endian
@@ -193,6 +230,7 @@ function handleBinaryMessage(buffer) {
         const channel = availableChannels.get(channelId)
 
         // 时间戳: bytes 5-12 (uint64)
+        if (!channel || !subscriptionCallbacks.has(subscriptionId)) return
         const payloadOffset = 13
         const payloadBytes = new Uint8Array(buffer, payloadOffset)
 
@@ -320,8 +358,34 @@ function handleCdrMessage(subId, channel, buffer, offset) {
     const reader = new CdrReader(buffer, offset + 4)
 
     try {
-        if (channel.schemaName === 'sensor_msgs/msg/BatteryState' || channel.schemaName === 'sensor_msgs/BatteryState') {
+        if (channel.schemaName === 'geometry_msgs/msg/PoseStamped' || channel.schemaName === 'geometry_msgs/PoseStamped') {
+            const stamp = reader.readInt32() * 1000 + reader.readUint32() / 1e6
+            const frame = reader.readString()
+            const [x,y,z,qx,qy,qz,qw] = Array.from({length:7}, () => reader.readFloat64())
+            if (frame && [x,y,z,qx,qy,qz,qw].every(Number.isFinite)) {
+                callback({ frame,stamp,x,y,z,qx,qy,qz,qw, yaw: Math.atan2(2*(qw*qz+qx*qy), 1-2*(qy*qy+qz*qz)) })
+            }
+        } else if (['nav2_msgs/msg/ParticleCloud', 'nav2_msgs/ParticleCloud'].includes(channel.schemaName)) {
+            const cloud = readParticleCloud(reader)
+            if (cloud) callback(cloud)
+        } else if (['sensor_msgs/msg/JointState', 'sensor_msgs/JointState'].includes(channel.schemaName)) {
+            reader.readInt32()
+            reader.readUint32()
+            reader.readString()
+            const count = reader.readUint32()
+            if (count === 0 || count > 256) return
+            const names = Array.from({length: count}, () => reader.readString())
+            if (reader.readUint32() !== count) return
+            const positions = Array.from({length: count}, () => reader.readFloat64())
+            if (positions.every(Number.isFinite)) {
+                callback(Object.fromEntries(names.map((name, i) => [name, positions[i]])))
+            }
+        } else if (['sensor_msgs/msg/PointCloud2', 'sensor_msgs/PointCloud2'].includes(channel.schemaName)) {
+            callback(readPointCloud(reader))
+        } else if (channel.schemaName === 'sensor_msgs/msg/BatteryState' || channel.schemaName === 'sensor_msgs/BatteryState') {
             callback(readBatteryState(reader))
+        } else if (channel.schemaName === 'std_msgs/msg/String' || channel.schemaName === 'std_msgs/String') {
+            callback({ data: reader.readString() })
         } else if (channel.schemaName === 'std_msgs/msg/UInt16' || channel.schemaName === 'std_msgs/UInt16') {
             const value = reader.readUint16()
             callback({ data: value })
@@ -334,9 +398,7 @@ function handleCdrMessage(subId, channel, buffer, offset) {
         } else if (channel.schemaName === 'nav_msgs/msg/OccupancyGrid' || channel.schemaName === 'nav_msgs/OccupancyGrid') {
             console.log(`[Foxglove] 开始解析 CDR 地图 (len=${buffer.byteLength})...`)
             // 1. Header
-            reader.readInt32() // stamp.sec
-            reader.readUint32() // stamp.nanosec
-            reader.readString() // frame_id
+            const header = { stamp: { sec: reader.readInt32(), nanosec: reader.readUint32() }, frame_id: reader.readString() }
 
             // 2. MapMetaData info
             reader.readInt32() // map_load_time.sec
@@ -362,6 +424,7 @@ function handleCdrMessage(subId, channel, buffer, offset) {
             console.log(`[Foxglove] 地图解析成功, 数据量: ${data.length}`)
 
             callback({
+                header,
                 info: {
                     resolution,
                     width,
@@ -480,9 +543,7 @@ function handleCdrMessage(subId, channel, buffer, offset) {
             })
         } else if (channel.schemaName === 'nav_msgs/msg/Path' || channel.schemaName === 'nav_msgs/Path') {
             // Header
-            reader.readInt32()  // stamp.sec
-            reader.readUint32() // stamp.nanosec
-            reader.readString() // frame_id
+            const header = { stamp: { sec: reader.readInt32(), nanosec: reader.readUint32() }, frame_id: reader.readString() }
             // Poses array
             const numPoses = reader.readUint32()
             const poses = []
@@ -490,7 +551,7 @@ function handleCdrMessage(subId, channel, buffer, offset) {
                 // Header (stamp + frame_id)
                 reader.readInt32()
                 reader.readUint32()
-                reader.readString()
+                const frame = reader.readString()
                 // Position
                 const px = reader.readFloat64()
                 const py = reader.readFloat64()
@@ -500,9 +561,9 @@ function handleCdrMessage(subId, channel, buffer, offset) {
                 const qy = reader.readFloat64()
                 const qz = reader.readFloat64()
                 const qw = reader.readFloat64()
-                poses.push({ position: { x: px, y: py, z: pz }, orientation: { x: qx, y: qy, z: qz, w: qw } })
+                poses.push({ frame, position: { x: px, y: py, z: pz }, orientation: { x: qx, y: qy, z: qz, w: qw } })
             }
-            callback({ poses })
+            callback({ header, poses })
         } else if (channel.schemaName === 'nav2_msgs/action/NavigateToPose_FeedbackMessage' || channel.schemaName === 'nav2_msgs/NavigateToPose_FeedbackMessage') {
             console.log('[Foxglove] 开始解析 NavigateToPose_FeedbackMessage...')
             // goal_id (uuid, 16 bytes, uint8[16])
@@ -576,16 +637,30 @@ function findChannelByTopic(topicName) {
  * @param {Function} callback - 收到消息时的回调 (parsedJSON) => void
  * @returns {number|null} subscriptionId, 失败返回 null
  */
-function subscribe(topicName, callback) {
-    const channelId = findChannelByTopic(topicName)
+function subscribe(topicName, callback, channelId = findChannelByTopic(topicName)) {
     if (channelId === null) {
         console.warn(`[Foxglove] 找不到话题: ${topicName}`)
         return null
     }
 
     const subId = nextSubscriptionId++
-    subscriptionCallbacks.set(subId, callback)
     subscriptionIdToChannelId.set(subId, channelId)
+    const existing = wireByChannel.get(channelId)
+    if (existing !== undefined) {
+        listenersByWire.get(existing).set(subId, callback)
+        if (lastSampleByWire.has(existing)) callback(lastSampleByWire.get(existing))
+        return subId
+    }
+    wireByChannel.set(channelId, subId)
+    const listeners = new Map([[subId, callback]])
+    listenersByWire.set(subId, listeners)
+    const channel=availableChannels.get(channelId)
+    const cacheLast=channel?.schemaName?.endsWith('/OccupancyGrid') ||
+      channel?.topic===modelDescriptionTopic || channel?.topic===modelStaticTopic
+    subscriptionCallbacks.set(subId, data => {
+        if (cacheLast) lastSampleByWire.set(subId, data)
+        for (const receive of listeners.values()) receive(data)
+    })
 
     const msg = {
         op: 'subscribe',
@@ -605,12 +680,22 @@ function subscribe(topicName, callback) {
  * @param {number} subscriptionId
  */
 function unsubscribe(subscriptionId) {
-    subscriptionCallbacks.delete(subscriptionId)
+    const channelId = subscriptionIdToChannelId.get(subscriptionId)
+    const wire = wireByChannel.get(channelId)
+    const listeners = listenersByWire.get(wire)
+    if (!listeners?.delete(subscriptionId)) return
+    if (subscriptionId !== wire) subscriptionIdToChannelId.delete(subscriptionId)
+    if (listeners.size) return
+    subscriptionIdToChannelId.delete(wire)
+    subscriptionCallbacks.delete(wire)
+    lastSampleByWire.delete(wire)
+    listenersByWire.delete(wire)
+    wireByChannel.delete(channelId)
 
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
             op: 'unsubscribe',
-            subscriptionIds: [subscriptionId]
+            subscriptionIds: [wire]
         }))
     }
 }
@@ -703,17 +788,14 @@ function publishMessage(channelId, data) {
  * @param {number} y - 目标点 y (米)
  * @param {number} yaw - 目标方向 (弧度)，默认0
  */
-function sendGoalPose(channelId, x, y, yaw = 0) {
+function sendGoalPose(channelId, x, y, yaw = 0, frame = 'map') {
     const halfYaw = yaw / 2
     const qz = Math.sin(halfYaw)
     const qw = Math.cos(halfYaw)
-    const stamp = Date.now() / 1000
-    const sec = Math.floor(stamp)
-    const nanosec = Math.round((stamp - sec) * 1e9)
     const msg = {
         header: {
-            stamp: { sec, nanosec },
-            frame_id: 'map'
+            stamp: poseStamp(),
+            frame_id: frame
         },
         pose: {
             position: { x, y, z: 0.0 },
@@ -754,13 +836,10 @@ function sendTwist(channelId, linearX, linearY, angularZ) {
  * @param {number} y - 初始位置 y (米)
  * @param {number} yaw - 初始朝向 (弧度)
  */
-function sendInitialPose(channelId, x, y, yaw = 0) {
+function sendInitialPose(channelId, x, y, yaw = 0, frame = 'map') {
     const halfYaw = yaw / 2
     const qz = Math.sin(halfYaw)
     const qw = Math.cos(halfYaw)
-    const stamp = Date.now() / 1000
-    const sec = Math.floor(stamp)
-    const nanosec = Math.round((stamp - sec) * 1e9)
     // 标准 AMCL 初始协方差矩阵 (6x6, 行优先)
     const cov = [
         0.25, 0, 0, 0, 0, 0,
@@ -768,10 +847,10 @@ function sendInitialPose(channelId, x, y, yaw = 0) {
         0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0.0685
+        0, 0, 0, 0, 0, (Math.PI / 12) ** 2
     ]
     const msg = {
-        header: { stamp: { sec, nanosec }, frame_id: 'map' },
+        header: { stamp: poseStamp(), frame_id: frame },
         pose: {
             pose: {
                 position: { x, y, z: 0.0 },
@@ -794,6 +873,8 @@ export function useFoxglove() {
         serverCapabilities: readonly(serverCapabilities),
         errorMessage: readonly(errorMessage),
         availableChannels,
+        costmapsReady: costmaps.ready,
+        clearCostmaps: costmaps.clearBoth,
 
         // 方法
         connect,
@@ -804,6 +885,7 @@ export function useFoxglove() {
         clientUnadvertise,
         publishMessage,
         sendTwist,
+        syncDeviceClock,
         sendGoalPose,
         sendInitialPose,
         findChannelByTopic

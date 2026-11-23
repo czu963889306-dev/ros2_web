@@ -8,12 +8,18 @@
     max_qos_depth: 1
     send_buffer_limit: 10000000
     topic_whitelist:
+      - "^/web/map_inputs/.+$"
       - "^/battery_state$"
+      - "^/odom$"
       - "^/map$"
+      - "^/mapping_3d/cloud_map$"
+      - "^/mapping_3d/robot_pose$"
       - "^/global_costmap/costmap$"
       - "^/scan$"
       - "^/web/tf$"
       - "^/tf_static$"
+      - "^/joint_states$"
+      - "^/robot_description$"
       - "^/web/odometry/filtered$"
       - "^/plan$"
       - "^/navigate_to_pose/_action/feedback$"
@@ -26,8 +32,10 @@
       - "^/lite_navigation/cancel$"
       - "^/navigation/cancel$"
     service_whitelist:
-      - "(?!)"
+      - "^/global_costmap/clear_entirely_global_costmap$"
+      - "^/local_costmap/clear_entirely_local_costmap$"
     param_whitelist:
       - "(?!)"
     capabilities:
       - "clientPublish"
+      - "services"

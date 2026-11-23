@@ -8,10 +8,14 @@ async function fixture(t) {
   const ids = ['cartographer', 'gmapping', 'slam_toolbox'];
   const config = { default_mapping_algorithm: 'slam_toolbox', mapping_algorithms: Object.fromEntries(ids.map(id =>
     [id, { id: 'map_' + id, command: 'ros2', args: ['launch', id, id + '.launch.py'] }])) };
+  let serviceState = 'inactive';
+  const service3d = { state: () => serviceState, start: async () => { serviceState = 'active'; },
+    stop: async () => { serviceState = 'inactive'; } };
+  config.mapping_algorithms.rtabmap_3d = { service: 'chuyun-mapping-3d.service' };
   const spawned = [], stopped = [];
   const control = { navigation: false, failSpawn: false, failStop: false, releaseStop: null };
   const app = express(); app.use(express.json());
-  const mapper = installMapping(app, { loadConfig: () => config, navigationRunning: () => control.navigation,
+  const mapper = installMapping(app, { loadConfig: () => config, service3d, navigationRunning: () => control.navigation,
     spawnTask(task) {
       const proc = new EventEmitter(); spawned.push({ task, proc });
       queueMicrotask(() => proc.emit(control.failSpawn ? 'error' : 'spawn', new Error('spawn failed')));
@@ -30,12 +34,12 @@ async function fixture(t) {
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     return { status: res.status, body: await res.json() };
   };
-  return { request, config, spawned, stopped, control, mapper };
+  return { request, config, spawned, stopped, control, mapper, service3d };
 }
 
 test('all three choices launch only their own command; aliases share status and stop the selected process', async t => {
   const f = await fixture(t);
-  assert.deepEqual((await f.request('mapping_algorithms')).body.algorithms.map(a => a.id), ['cartographer', 'gmapping', 'slam_toolbox']);
+  assert.deepEqual((await f.request('mapping_algorithms')).body.algorithms.map(a => a.id), ['cartographer', 'gmapping', 'slam_toolbox', 'rtabmap_3d']);
   for (const algorithm of ['cartographer', 'gmapping', 'slam_toolbox']) {
     const before = f.spawned.length;
     const started = await f.request('start_mapping', { algorithm });
@@ -94,4 +98,21 @@ test('stop completes before switching; stop failure keeps mapping locked and all
   release(); assert.equal((await stopping).status, 200);
   assert.equal(f.mapper.running(), false);
   assert.equal((await f.request('start_mapping', { algorithm: 'gmapping' })).status, 200);
+});
+
+test('3D uses the installed mapping service and respects an externally started session', async t => {
+  const f = await fixture(t);
+  const start = () => f.request('start_mapping', { algorithm: 'rtabmap_3d' });
+  f.control.navigation = true;
+  assert.equal((await start()).status, 409);
+  f.control.navigation = false;
+  assert.equal((await start()).body.algorithm, 'rtabmap_3d');
+  assert.equal((await start()).body.isRunning, true);
+  assert.equal(f.spawned.length, 0);
+  await f.service3d.stop();
+  assert.equal((await f.request('mapping_status')).body.isRunning, false);
+  await f.service3d.start();
+  assert.equal(f.mapper.running(), true);
+  assert.equal((await f.request('start_mapping', { algorithm: 'gmapping' })).status, 409);
+  assert.equal((await f.request('stop_mapping', {})).body.isRunning, false);
 });

@@ -1,6 +1,8 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import disk from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const quote = value => `'${String(value).replace(/'/g, `'\\''`)}'`;
 const fail = (status, message) => Object.assign(new Error(message), { status });
@@ -35,9 +37,53 @@ export function runMapSaver(argv, { setupCommand, timeoutMs = 45000 }) {
 }
 
 export function installMapSaving(app, {
-  loadConfig, setupCommand, mappingAlgorithm = () => null, runCommand = runMapSaver
+  loadConfig, setupCommand, mappingAlgorithm = () => null, runCommand = runMapSaver,
+  navigationMap = () => null, pointStore
 }) {
   let saving = false;
+  app.delete('/api/maps/:name', (req, res) => {
+    try {
+      if (req.get('X-Map-Delete') !== '1') throw fail(403, '请从地图列表确认删除');
+      const origin = req.get('Origin');
+      if (origin && new URL(origin).hostname !== req.hostname) throw fail(403, '请从本机中控台删除地图');
+      const name = req.params.name;
+      if (!name || name.startsWith('.') || /[\/\\\x00-\x1f]/.test(name) || Buffer.byteLength(name) > 250)
+        throw fail(400, '地图名称无效');
+      const config = loadConfig();
+      const dir = path.resolve(config.maps_dir || config.save_map?.save_dir || '/tmp');
+      const base = path.join(dir, name);
+      if (navigationMap() === base) throw fail(409, '这张地图正在导航中，请先关闭导航');
+      if (saving) throw fail(409, '地图正在保存，请稍后再试');
+      const yaml = base + '.yaml';
+      if (!disk.lstatSync(yaml, { throwIfNoEntry: false })?.isFile()) throw fail(404, '地图不存在');
+      const script = fileURLToPath(new URL('./map_image.py', import.meta.url));
+      const image = spawnSync('/usr/bin/python3', [script, yaml], { encoding: 'utf8', timeout: 5000 });
+      if (image.status !== 0) throw fail(500, '无法检查地图图像的引用关系');
+      const files = [yaml];
+      if (image.stdout && path.basename(image.stdout) === image.stdout) files.push(path.join(dir, image.stdout));
+      const points = pointStore.read();
+      const remaining = points.filter(p => p.mapPath !== base);
+      const staging = disk.mkdtempSync(path.join(dir, '.map-delete-'));
+      const moved = [];
+      try {
+        for (const file of files) {
+          disk.renameSync(file, path.join(staging, path.basename(file)));
+          moved.push(file);
+        }
+        if (remaining.length !== points.length) pointStore.write(remaining);
+      } catch (error) {
+        for (const file of moved.reverse()) disk.renameSync(path.join(staging, path.basename(file)), file);
+        disk.rmdirSync(staging);
+        throw error;
+      }
+      // At this point the map and its presets have been removed from the catalog.
+      try { disk.rmSync(staging, { recursive: true }); }
+      catch (error) { console.error('[delete_map] cleanup:', error.message); }
+      res.json({ success: true, removedPoints: points.length - remaining.length });
+    } catch (error) {
+      res.status(error.status || 500).json({ success: false, error: error.status ? error.message : '删除失败，请检查地图目录' });
+    }
+  });
   app.post('/api/save_map', async (req, res) => {
     const name = req.body?.mapName;
     if (typeof name !== 'string' || !name.trim())

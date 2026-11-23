@@ -1,5 +1,16 @@
 # 机器人中控台 (Robot Control Console)
 
+## ARM 源码同步（2026-11-23）
+
+`Ros_Vue_arm/` 来自设备 `192.168.31.129` 的部署前源码备份
+`/root/ros2-web-backup-20261121-090417-TDON/previous/ros2_web/`。
+其中 `ros_config.json`、`foxglove_bridge.params.yaml`、`fastdds-local-filter.xml`、
+`navigation_points.json` 和 `ros2-web-topic-throttle.sh` 已同步设备当前
+`/root/ros2_web/` 的版本。启动脚本保留源码版，进入 `Ros_Vue_arm/` 安装依赖后运行。
+
+当前设备运行的是打包程序 `ros2-console`，未将该程序纳入源码仓库；
+本次同步不保证备份源码与该程序完全一致。
+
 ## 项目简介
 
 这是一个基于 Web 的机器人中控台，用于实时监控和控制 ROS 2 机器人。该项目集成了地图展示、摇杆控制、状态监测以及建图管理等功能。

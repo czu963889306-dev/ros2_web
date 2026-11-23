@@ -9,6 +9,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+const emit = defineEmits(['status'])
 const status = ref(null), now = ref(Date.now()), receivedAt = ref(0), offset = ref(0), timezone = ref('')
 let pollingTimer, clockTimer, controller, disposed = false
 const online = computed(() => status.value !== null && receivedAt.value > 0 && now.value - receivedAt.value < 8000)
@@ -40,7 +41,13 @@ async function poll() {
     offset.value = Date.parse(value.server_time) - Date.now()
     timezone.value = value.timezone
     status.value = value; receivedAt.value = Date.now(); now.value = Date.now()
-  } catch { if (!disposed) status.value = null }
+    emit('status', value)
+  } catch {
+    if (!disposed) {
+      status.value = null
+      emit('status', null)
+    }
+  }
   finally { clearTimeout(timeout); if (!disposed) pollingTimer = setTimeout(poll, 2000) }
 }
 onMounted(() => { poll(); clockTimer = setInterval(() => { now.value = Date.now() }, 1000) })

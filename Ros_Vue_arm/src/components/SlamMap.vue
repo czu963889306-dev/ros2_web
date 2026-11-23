@@ -1,53 +1,45 @@
 <template>
-  <div class="card map-card">
+  <div class="card map-card" @keydown="onToolKey">
     <div class="card-header">
       <div class="header-left">
-        SLAM 栅格地图
+        <strong>二维地图</strong>
+        <div class="pose-tools" role="group" aria-label="位姿工具">
+          <button v-for="tool in poseTools" :key="tool.id" type="button" class="pose-tool"
+            :aria-pressed="poseTool === tool.id" :disabled="!connected"
+            :title="tool.title" :aria-keyshortcuts="tool.key" @click="selectTool(tool.id)">
+            <i class="tool-arrow" aria-hidden="true"></i>{{ tool.label }}
+          </button>
+        </div>
       </div>
       <div class="header-right">
-        <!-- 导航特有控件 -->
-        <template v-if="isNavigating">
-          <span class="nav-status-mini">导航中</span>
-          <button class="btn-mini btn-mini-pose" :class="{ 'active': isSettingPose }" @click="togglePoseMode">
-            设置初始位置
-          </button>
-        </template>
-
+        <button type="button" class="btn-mini" :disabled="!clearReady || clearingCostmaps"
+          :title="clearReady ? '清除 Nav2 的全局和局部代价地图' : '等待 Nav2 的全局和局部清除服务'" @click="clearNavigationCosts">{{ clearingCostmaps ? '清除中…' : '清除代价地图' }}</button>
+        <span v-if="isNavigating" class="nav-status-mini">导航中</span>
         <button v-if="isMapping" class="btn-mini btn-mini-save" @click="openSaveDialog" :disabled="isSaving">
           {{ isSaving ? '保存中...' : '保存地图' }}
         </button>
-        <button v-if="hasMap" class="btn-mini" @click="resetView">重置视图</button>
+        <button v-if="model" type="button" class="btn-mini" :disabled="!modelLocated" @click="focusModel">聚焦机器人</button>
+        <button class="btn-mini" @click="resetView">重置视图</button>
       </div>
     </div>
     <div class="card-body">
       <div 
-        v-if="shouldShowCanvas" 
+
         class="map-canvas-container"
-        ref="containerRef"
+        ref="containerRef" tabindex="0" role="region" aria-label="二维地图交互区域"
         @wheel.prevent="onWheel"
-        @mousedown="onMouseDown"
-        @mousemove="onMouseMove"
-        @mouseup="onMouseUp"
-        @mouseleave="onMouseUp"
-        @touchstart.passive="onTouchStart"
-        @touchmove.prevent="onTouchMove"
-        @touchend="onMouseUp"
+        @pointerdown="onPointerDown" @pointermove="onPointerMove" @pointerup="onPointerUp"
+        @pointercancel="onPointerCancel" @lostpointercapture="onPointerCancel" @contextmenu.prevent
         @dblclick="onDblClick"
-        :style="{ cursor: isSettingPose ? 'crosshair' : isNavigating ? 'crosshair' : (isDragging ? 'grabbing' : 'grab') }"
+        :style="{ cursor: poseTool ? 'crosshair' : (isDragging ? 'grabbing' : 'grab') }"
       >
-        <canvas ref="mapCanvasRef" />
-        <div class="map-info">
-          <span v-if="mapInfo">{{ mapInfo.width }} × {{ mapInfo.height }} | 缩放: {{ (scale * 100).toFixed(0) }}%</span>
-          <span v-else>无地图模式 | 缩放: {{ (scale * 100).toFixed(0) }}%</span>
-        </div>
-        
+        <canvas ref="mapCanvasRef" aria-label="可旋转、缩放的二维地图" />
+        <MapModelOverlay v-if="layers.model !== false && activeView" ref="modelOverlay" :model="model" :frames="frames" :frame-revision="frameRevision" :arm-positions="armPositions" @ready="requestDraw" />
         <!-- 悬浮操作提示 -->
-        <div v-if="isNavigating && !isSettingPose" class="map-overlay-hint hint-goal">
-          {{ isPickingPreset ? '双击地图选择预设位置（不会开始移动）' : multiPointMode ? '双击地图可连续添加航点' : '双击地图设定导航目标点' }}
+        <div v-if="placingPose" class="map-overlay-hint hint-pose" role="status">
+          {{ poseTool === 'initial' ? '初始位姿' : '导航目标' }} · 按住定位置，拖动定朝向，松开发送
         </div>
-        <div v-if="isSettingPose" class="map-overlay-hint hint-pose">
-          按住地图拖动以设定初始位置和朝向
-        </div>
+        <div v-else-if="poseTool === 'preset'" class="map-overlay-hint hint-goal">双击地图选择预设位置</div>
 
         <!-- 导航实时反馈面板 -->
         <div v-if="isNavigating" class="map-overlay-feedback">
@@ -62,11 +54,7 @@
           <div v-if="!hasNavFeedback" class="fb-waiting">等待导航反馈...</div>
         </div>
       </div>
-      <div v-else class="map-placeholder">
-        <p v-if="!connected">请先连接机器人</p>
-        <p v-else>等待地图或雷达数据...</p>
-      </div>
-
+      <div v-if="clearNotice" class="save-toast" :class="clearFailed ? 'save-toast-err' : 'save-toast-ok'" role="status">{{ clearNotice }}</div>
       <!-- 保存状态提示 -->
       <div v-if="saveMsg" class="save-toast" :class="saveSuccess ? 'save-toast-ok' : 'save-toast-err'">
         {{ saveMsg }}
@@ -83,6 +71,16 @@
       </div>
     </div>
 
+    <footer class="rv-status">
+      <span>坐标系 <code>{{ viewFrame }}</code></span>
+      <span>{{ mapInfo ? mapInfo.width + ' × ' + mapInfo.height : '等待栅格地图' }}</span>
+      <span>{{ Math.round(scale * 100) }}%</span>
+      <span>{{ Math.round(rotation * 180 / Math.PI) }}° · 倾角 {{ Math.round(tilt * 180 / Math.PI) }}°</span>
+      <span>左键旋转 · 中键平移 · 滚轮缩放</span>
+      <span v-if="armStatus">{{ armStatus }}</span>
+      <span v-if="model && !modelLocated">模型等待 TF</span>
+      <span v-if="frameWarning" class="frame-warning">{{ frameWarning }}</span>
+    </footer>
     <!-- 保存地图对话框 -->
     <Teleport to="body">
       <div v-if="showSaveDialog" class="modal-overlay" @click.self="showSaveDialog = false">
@@ -110,19 +108,33 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { defineAsyncComponent, ref, shallowRef, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 
+import { normalizeFrame, poseMatrix, projectPose } from '../composables/displayFrames.js'
+import { mapPalette, costmapPalette, renderGrid } from '../composables/gridPalette.js'
+
+const MapModelOverlay = defineAsyncComponent(() => import('./MapModelOverlay.vue'))
+const modelOverlay = ref(null)
+const modelLocated = ref(false)
 const props = defineProps({
+  model:Object, activeView:Boolean, armPositions:Object, armStatus:String,
   connected: Boolean,
   mapData: Object,
   costmapData: Object,
+  particles: Object,
+  clearReady: Boolean,
+  clearCostmaps: Function,
+  costmapTopic: String,
   scanData: Object,
-  tfData: Object,
+  frames: Object,
+  frameRevision: Number,
+  fixedFrame: String,
+  externalGoal: Object,
+  navigationTf: Boolean,
   planData: Object,
   isMapping: Boolean,
   isNavigating: Boolean,
-  isPickingPreset: Boolean,
-  isSettingPose: Boolean,
+  poseTool: { type: String, default: '' },
   multiPointMode: Boolean,
   waypoints: {
     type: Array,
@@ -139,6 +151,25 @@ const props = defineProps({
   }
 })
 
+const clearingCostmaps = ref(false), clearNotice = ref(''), clearFailed = ref(false)
+let clearNoticeTimer
+async function clearNavigationCosts() {
+  if (!props.clearReady || clearingCostmaps.value) return
+  clearTimeout(clearNoticeTimer)
+  clearingCostmaps.value = true
+  clearFailed.value = false
+  clearNotice.value = ''
+  try {
+    clearNotice.value = await props.clearCostmaps()
+  } catch (err) {
+    clearFailed.value = true
+    clearNotice.value = err.message
+  } finally {
+    clearingCostmaps.value = false
+    clearNoticeTimer = setTimeout(() => { clearNotice.value = '' }, 6000)
+  }
+}
+
 // === 保存地图 ===
 const showSaveDialog = ref(false)
 const mapNameInput = ref('')
@@ -150,7 +181,8 @@ const API_BASE = `http://${window.location.hostname}:3000/api`
 
 // === 导航 ===
 const goalPoint = ref(null)  // { x, y } in world (map) coords
-const navPathPoints = ref([])  // Array of { x, y }
+let missingPathFrame = ''
+const navPathPoints = shallowRef([])  // Array of { x, y }
 
 // === 初始位置 ===
 const poseAnchor = ref(null)  // { x, y } 按下位置 (世界坐标)
@@ -159,7 +191,14 @@ const settingMsg = ref('')
 const arriveMsg = ref('')
 const singleGoalReachedNotified = ref(false)
 
-const emit = defineEmits(['preset-selected', 'goal-set', 'waypoint-add', 'waypoint-reached', 'initial-pose-set', 'update:isSettingPose'])
+const emit = defineEmits(['preset-selected', 'goal-set', 'waypoint-add', 'waypoint-reached', 'initial-pose-set', 'update:poseTool'])
+const poseTools = [
+  { id:'initial', label:'2D Pose Estimate', title:'设置初始位姿 (P)', key:'P' },
+  { id:'goal', label:'2D Goal Pose', title:'设置导航目标 (G)', key:'G' }
+]
+const placingPose = computed(() => props.poseTool === 'initial' || props.poseTool === 'goal')
+const lastYaw = { initial:0, goal:0 }
+let settingTimer
 const waypointReachThreshold = 0.10
 const reachedWaypointKey = ref('')
 
@@ -175,13 +214,8 @@ const formattedETA = computed(() => {
 const formattedDistance = computed(() => {
   const feedbackDistance = props.navFeedback?.distance_remaining
 
-  let poseDistance = null
   const target = props.multiPointMode ? props.activeWaypoint : goalPoint.value
-  if (robotPose.value && target) {
-    const dx = robotPose.value.x - target.x
-    const dy = robotPose.value.y - target.y
-    poseDistance = Math.sqrt(dx * dx + dy * dy)
-  }
+  const poseDistance = distanceToTarget(target)
 
   const candidates = []
   if (typeof feedbackDistance === 'number' && Number.isFinite(feedbackDistance)) {
@@ -201,11 +235,24 @@ const formattedDistance = computed(() => {
 const hasNavFeedback = computed(() => {
   if (typeof props.navFeedback?.distance_remaining === 'number') return true
   const target = props.multiPointMode ? props.activeWaypoint : goalPoint.value
-  return !!(robotPose.value && target)
+  return distanceToTarget(target) !== null
 })
 
-function togglePoseMode() {
-  emit('update:isSettingPose', !props.isSettingPose)
+function selectTool(tool) {
+  if (props.connected) emit('update:poseTool', props.poseTool === tool ? '' : tool)
+}
+function onToolKey(e) {
+  if (!props.activeView || e.repeat || e.ctrlKey || e.altKey || e.metaKey || e.isComposing) return
+  if (e.key === 'Escape' && props.poseTool) {
+    e.preventDefault()
+    emit('update:poseTool','')
+    return
+  }
+  const tool = poseTools.find(item => item.key === e.key.toUpperCase())
+  if (tool && props.connected) {
+    e.preventDefault()
+    emit('update:poseTool',tool.id)
+  }
 }
 
 async function openSaveDialog() {
@@ -252,30 +299,27 @@ let costmapCanvas = null
 const scale = ref(1.0)
 const offsetX = ref(0)
 const offsetY = ref(0)
+const rotation = ref(0), tilt = ref(0)
+let userMoved = false
 
 // 机器人与雷达状态
 const robotPose = ref(null) // { x, y, yaw } in map frame
-const laserPoints = ref([]) // Array of { x, y } in map frame
-const sensorOffset = ref({ x: 0, y: 0, yaw: 0 }) // { x, y, yaw } from base_link to sensor
-
+const laserPoints = shallowRef([]) // Array of { x, y } in map frame
+const viewFrame = ref('map')
+const frameWarning = ref('')
+const noTransform = new Set()
+let fitNextMap = true
 // 交互状态
-let isDragging = false
-let lastMouseX = 0
-let lastMouseY = 0
-
-const shouldShowCanvas = computed(() => {
-  return props.connected && (props.mapData || props.scanData || props.tfData)
-})
-
-const hasMap = computed(() => {
-  return props.mapData && props.mapData.info && props.mapData.data
-})
+const isDragging = ref(false)
+const pointers = new Map()
+let gesture = null
+let lastTouch = null
 
 /**
  * 获取当前的坐标系信息。如果有地图用地图的，没有则用虚拟的。
  */
 function getEffectiveMapInfo() {
-  if (props.mapData && props.mapData.info) {
+  if (props.mapData?.info && normalizeFrame(props.mapData.header?.frame_id || 'map') === viewFrame.value) {
     return props.mapData.info
   }
   // 虚拟坐标系：500x500 像素，0.05米分辨率 (25m x 25m 区域)
@@ -293,94 +337,20 @@ function getEffectiveMapInfo() {
 /**
  * 将 OccupancyGrid 原始数据生成图像到离屏 Canvas
  */
-function updateOffscreenCanvas(occupancyGrid) {
-  const info = occupancyGrid.info
-  const data = occupancyGrid.data
-  const width = info.width
-  const height = info.height
-
-  if (!width || !height || !data || data.length === 0) return
-
-  if (!offscreenCanvas) {
-    offscreenCanvas = document.createElement('canvas')
-  }
-  offscreenCanvas.width = width
-  offscreenCanvas.height = height
-
-  const ctx = offscreenCanvas.getContext('2d')
-  const imageData = ctx.createImageData(width, height)
-  const pixels = imageData.data
-
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const rosIdx = y * width + x
-      const val = data[rosIdx]
-      const canvasIdx = ((height - 1 - y) * width + x) * 4
-      
-      let r, g, b
-      if (val === -1) { r = 60; g = 60; b = 65 }
-      else if (val === 0) { r = 240; g = 240; b = 245 }
-      else if (val === 100) { r = 30; g = 30; b = 40 }
-      else {
-        const intensity = 255 - Math.round((val / 100) * 180)
-        r = g = b = intensity
-      }
-      pixels[canvasIdx] = r
-      pixels[canvasIdx + 1] = g
-      pixels[canvasIdx + 2] = b
-      pixels[canvasIdx + 3] = 255
-    }
-  }
-  ctx.putImageData(imageData, 0, 0)
-  
-  mapInfo.value = { width, height, resolution: info.resolution }
-  
-  if (scale.value === 1.0 && offsetX.value === 0) {
-    autoFit()
+function updateOffscreenCanvas(grid) {
+  offscreenCanvas = renderGrid(grid, offscreenCanvas, mapPalette)
+  if (offscreenCanvas) {
+    const { width, height, resolution } = grid.info
+    mapInfo.value = { width, height, resolution }
+    if (fitNextMap) autoFit()
   } else {
-    requestDraw()
+    mapInfo.value = null
   }
+  requestDraw()
 }
 
-function updateCostmapCanvas(occupancyGrid) {
-  const info = occupancyGrid.info
-  const data = occupancyGrid.data
-  const width = info.width
-  const height = info.height
-
-  if (!width || !height || !data || data.length === 0) return
-
-  if (!costmapCanvas) {
-    costmapCanvas = document.createElement('canvas')
-  }
-  costmapCanvas.width = width
-  costmapCanvas.height = height
-
-  const ctx = costmapCanvas.getContext('2d')
-  const imageData = ctx.createImageData(width, height)
-  const pixels = imageData.data
-
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const rosIdx = y * width + x
-      const val = data[rosIdx]
-      const canvasIdx = ((height - 1 - y) * width + x) * 4
-
-      if (val < 1) {
-        pixels[canvasIdx + 3] = 0
-        continue
-      }
-
-      const clamped = Math.max(0, Math.min(100, val))
-      const t = clamped / 100
-      pixels[canvasIdx] = Math.round(96 - t * 56)
-      pixels[canvasIdx + 1] = Math.round(165 - t * 95)
-      pixels[canvasIdx + 2] = Math.round(250 - t * 45)
-      pixels[canvasIdx + 3] = Math.round(55 + t * 150)
-    }
-  }
-
-  ctx.putImageData(imageData, 0, 0)
+function updateCostmapCanvas(grid) {
+  costmapCanvas = renderGrid(grid, costmapCanvas, costmapPalette)
   requestDraw()
 }
 
@@ -417,17 +387,103 @@ function worldToPixel(wx, wy) {
 }
 
 let isDrawPending = false
-function requestDraw() {
-  if (!isDrawPending) {
-    isDrawPending = true
-    requestAnimationFrame(() => {
-      draw()
-      isDrawPending = false
-    })
+function mapYaw() { return quatToYaw(getEffectiveMapInfo().origin.orientation) }
+function pixelToWorld(x, y) {
+  const info = getEffectiveMapInfo()
+  return compose({ ...info.origin.position, yaw:mapYaw() },
+    { x:x*info.resolution, y:(info.height-1-y)*info.resolution, yaw:0 })
+}
+function frameTransform(frame, stamp = 0) {
+  const name = normalizeFrame(frame || 'map')
+  const matrix = props.frames.lookup(viewFrame.value, name, stamp)
+  if (!matrix) noTransform.add(name)
+  return matrix
+}
+function applyPlane(ctx, matrix, pixelOffset = 0) {
+  const origin = projectPose(matrix, { x:0, y:0 })
+  const x = projectPose(matrix, { x:1, y:0 })
+  const y = projectPose(matrix, { x:0, y:1 })
+  const o = worldToPixel(origin.x, origin.y)
+  const u = worldToPixel(x.x, x.y), v = worldToPixel(y.x, y.y)
+  ctx.transform(u.x-o.x, u.y-o.y, v.x-o.x, v.y-o.y, o.x, o.y+pixelOffset)
+}
+function drawOccupancy(ctx, image, data, opacity = 1) {
+  const tf = frameTransform(data.header?.frame_id)
+  if (!tf) return
+  const info = data.info
+  const origin = poseMatrix(info.origin.position, info.origin.orientation || {x:0,y:0,z:0,w:1})
+  ctx.save()
+  applyPlane(ctx, tf.clone().multiply(origin), 1)
+  ctx.scale(info.resolution, -info.resolution)
+  ctx.globalAlpha = opacity
+  ctx.drawImage(image, 0, -image.height)
+  ctx.restore()
+}
+function drawParticles(ctx, cloud) {
+  const tf = frameTransform(cloud.frame, props.fixedFrame ? 0 : cloud.stamp)
+  if (!tf) return
+  const resolution = getEffectiveMapInfo().resolution
+  ctx.save()
+  applyPlane(ctx, tf)
+  ctx.strokeStyle = '#00b400'
+  ctx.lineWidth = resolution / scale.value
+  ctx.stroke(cloud.path)
+  ctx.restore()
+}
+watch(() => props.particles, requestDraw)
+
+function drawGrid(ctx, canvas) {
+  const corners = [[0,0],[canvas.width,0],[0,canvas.height],[canvas.width,canvas.height]]
+    .map(([x,y]) => worldAt({x,y}))
+  const xs = corners.map(p=>p.x), ys = corners.map(p=>p.y)
+  const step = Math.max(1, 2 ** Math.ceil(Math.log2(9 * getEffectiveMapInfo().resolution / scale.value)))
+  const minX=Math.floor(Math.min(...xs)/step)*step, maxX=Math.max(...xs)+step
+  const minY=Math.floor(Math.min(...ys)/step)*step, maxY=Math.max(...ys)+step
+  const line = (a,b) => { ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y) }
+  ctx.lineWidth = 1/scale.value
+  ctx.strokeStyle = '#525256'
+  ctx.beginPath()
+  for (let x=minX; x<=maxX; x+=step) line(worldToPixel(x,minY),worldToPixel(x,maxY))
+  for (let y=minY; y<=maxY; y+=step) line(worldToPixel(minX,y),worldToPixel(maxX,y))
+  ctx.stroke()
+  const origin=worldToPixel(0,0)
+  for (const [x,y,color] of [[1,0,'#ef6656'],[0,1,'#68ce73']]) {
+    ctx.strokeStyle=color; ctx.lineWidth=2/scale.value; ctx.beginPath()
+    line(origin, worldToPixel(x,y)); ctx.stroke()
   }
+}
+function requestDraw() {
+  if (!props.activeView || isDrawPending) return
+  isDrawPending = true
+  requestAnimationFrame(() => {
+    isDrawPending = false
+    if (props.activeView) draw()
+  })
+}
+
+function drawHeading(ctx, pose, length, color) {
+  const origin = worldToPixel(pose.x, pose.y)
+  ctx.save()
+  ctx.translate(origin.x, origin.y)
+  ctx.rotate(mapYaw() - pose.yaw)
+  ctx.scale(1 / scale.value, 1 / scale.value)
+  const tip = Math.min(length / 2, 12)
+  ctx.beginPath()
+  ctx.moveTo(0, -2)
+  ctx.lineTo(length - tip, -2)
+  ctx.lineTo(length - tip, -6)
+  ctx.lineTo(length, 0)
+  ctx.lineTo(length - tip, 6)
+  ctx.lineTo(length - tip, 2)
+  ctx.lineTo(0, 2)
+  ctx.closePath()
+  ctx.fillStyle = color
+  ctx.fill()
+  ctx.restore()
 }
 
 function drawGoalMarker(ctx, waypoint, index, color) {
+  if (Number.isFinite(waypoint.yaw)) drawHeading(ctx, waypoint, 26, color)
   const gp = worldToPixel(waypoint.x, waypoint.y)
   const r = 8 / scale.value
   ctx.strokeStyle = color
@@ -441,7 +497,7 @@ function drawGoalMarker(ctx, waypoint, index, color) {
   ctx.arc(gp.x, gp.y, r * 0.45, 0, Math.PI * 2)
   ctx.fill()
 
-  const label = String(index + 1)
+  const label = index === null ? "G" : String(index + 1)
   ctx.font = `${12 / scale.value}px var(--font-mono)`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
@@ -457,8 +513,9 @@ function draw() {
   const container = containerRef.value
   if (!canvas || !container) return
 
-  canvas.width = container.clientWidth
-  canvas.height = container.clientHeight
+  if (!container.clientWidth || !container.clientHeight) return
+  if (canvas.width !== container.clientWidth) canvas.width = container.clientWidth
+  if (canvas.height !== container.clientHeight) canvas.height = container.clientHeight
   const ctx = canvas.getContext('2d')
   ctx.clearRect(0, 0, canvas.width, canvas.height)
 
@@ -469,32 +526,23 @@ function draw() {
 
   ctx.save()
   ctx.translate(offsetX.value, offsetY.value)
-  ctx.scale(scale.value, scale.value)
+  ctx.scale(scale.value, scale.value * Math.cos(tilt.value))
+  ctx.rotate(rotation.value)
   ctx.imageSmoothingEnabled = false 
   
-  // 1. 画地图 (如果有)
-  if (isMapVisible) {
-    ctx.drawImage(offscreenCanvas, 0, 0)
-  } else if (!offscreenCanvas) {
-    // 画一个淡紫色的十字准星表示虚拟原点
-    ctx.strokeStyle = 'rgba(99, 102, 241, 0.2)'
-    ctx.lineWidth = 1 / scale.value
-    const center = worldToPixel(0, 0)
-    ctx.beginPath()
-    ctx.moveTo(center.x - 20/scale.value, center.y)
-    ctx.lineTo(center.x + 20/scale.value, center.y)
-    ctx.moveTo(center.x, center.y - 20/scale.value)
-    ctx.lineTo(center.x, center.y + 20/scale.value)
-    ctx.stroke()
+  noTransform.clear()
+  if (props.layers.grid) drawGrid(ctx, canvas)
+  if (isMapVisible) drawOccupancy(ctx, offscreenCanvas, props.mapData)
+  if (isCostmapVisible) {
+    const opacity = props.costmapTopic?.endsWith('/local_costmap/costmap') ? 0.7 : 0.3
+    drawOccupancy(ctx, costmapCanvas, props.costmapData, opacity)
   }
 
-  if (isCostmapVisible) {
-    ctx.drawImage(costmapCanvas, 0, 0)
-  }
+  if (props.layers.particles && props.particles) drawParticles(ctx, props.particles)
 
   // 2. 画雷达点 (红色)
   if (isScanVisible) {
-    ctx.fillStyle = '#b91c1c'
+    ctx.fillStyle = '#ff643d'
     for (const p of laserPoints.value) {
       const pix = worldToPixel(p.x, p.y)
       ctx.beginPath()
@@ -504,11 +552,11 @@ function draw() {
   }
 
   // 3. 画机器人 (蓝色箭头)
-  if (isRobotVisible) {
+  if (isRobotVisible && !(props.model && modelLocated.value)) {
     const pix = worldToPixel(robotPose.value.x, robotPose.value.y)
     ctx.save()
     ctx.translate(pix.x, pix.y)
-    ctx.rotate(-robotPose.value.yaw)
+    ctx.rotate(mapYaw() - robotPose.value.yaw)
     
     ctx.fillStyle = '#6366f1'
     ctx.beginPath()
@@ -526,9 +574,8 @@ function draw() {
 
   // 4. 画导航路径 (绿色折线)
   if (props.layers.path !== false && navPathPoints.value.length > 1) {
-    ctx.strokeStyle = 'rgba(52, 211, 153, 0.8)'
+    ctx.strokeStyle = '#ff3939'
     ctx.lineWidth = 2 / scale.value
-    ctx.setLineDash([6 / scale.value, 3 / scale.value])
     ctx.beginPath()
     const first = worldToPixel(navPathPoints.value[0].x, navPathPoints.value[0].y)
     ctx.moveTo(first.x, first.y)
@@ -540,112 +587,57 @@ function draw() {
     ctx.setLineDash([])
   }
 
+  if (props.layers.goal && props.externalGoal) {
+    const g = props.externalGoal
+    const tf = frameTransform(g.frame)
+    if (tf) drawGoalMarker(ctx, projectPose(tf, g), null, '#fc9b45')
+  }
+  if (props.layers.scan && props.scanData?.header) frameTransform(props.scanData.header.frame_id)
+  if (props.layers.path && missingPathFrame) noTransform.add(missingPathFrame)
   // 5. 画目标点 / 航点
   if (props.layers.goal !== false) {
     if (props.multiPointMode) {
       if (props.activeWaypoint) {
-        drawGoalMarker(ctx, props.activeWaypoint, 0, '#f97316')
+        const point = inView(props.activeWaypoint)
+        if (point) drawGoalMarker(ctx, point, 0, '#f97316')
       }
       for (let i = 0; i < props.waypoints.length; i++) {
-        drawGoalMarker(ctx, props.waypoints[i], i + (props.activeWaypoint ? 1 : 0), '#a78bfa')
+        const point = inView(props.waypoints[i])
+        if (point) drawGoalMarker(ctx, point, i + (props.activeWaypoint ? 1 : 0), '#a78bfa')
       }
     } else if (goalPoint.value) {
-      const gp = worldToPixel(goalPoint.value.x, goalPoint.value.y)
-      const r = 8 / scale.value
-      ctx.strokeStyle = '#a78bfa'
-      ctx.lineWidth = 2 / scale.value
-      ctx.beginPath()
-      ctx.arc(gp.x, gp.y, r, 0, Math.PI * 2)
-      ctx.stroke()
-      ctx.fillStyle = 'rgba(167, 139, 250, 0.4)'
-      ctx.beginPath()
-      ctx.arc(gp.x, gp.y, r * 0.5, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.strokeStyle = '#a78bfa'
-      ctx.lineWidth = 1.5 / scale.value
-      const cross = 14 / scale.value
-      ctx.beginPath()
-      ctx.moveTo(gp.x - cross, gp.y)
-      ctx.lineTo(gp.x + cross, gp.y)
-      ctx.moveTo(gp.x, gp.y - cross)
-      ctx.lineTo(gp.x, gp.y + cross)
-      ctx.stroke()
+      const point = inView(goalPoint.value)
+      if (point) drawGoalMarker(ctx, point, null, '#a78bfa')
     }
   }
-
-  // 6. 画初始位置箭头 (黄色)
+  const fixedMissing = props.fixedFrame && !props.frames.names().includes(viewFrame.value) &&
+    ![props.mapData?.header?.frame_id,props.costmapData?.header?.frame_id,props.scanData?.header?.frame_id,
+      props.planData?.header?.frame_id,props.particles?.frame].some(name => normalizeFrame(name) === viewFrame.value)
+  frameWarning.value = fixedMissing ? '等待 TF · 固定坐标系 ' + viewFrame.value :
+    noTransform.size ? '等待 TF · ' + [...noTransform].join('、') + ' → ' + viewFrame.value : ''
   if (poseAnchor.value) {
-    const ap = worldToPixel(poseAnchor.value.x, poseAnchor.value.y)
-    const r = 8 / scale.value
-    // 圆圈
-    ctx.strokeStyle = '#fbbf24'
-    ctx.fillStyle = 'rgba(251, 191, 36, 0.3)'
-    ctx.lineWidth = 2 / scale.value
+    const origin = worldToPixel(poseAnchor.value.x, poseAnchor.value.y)
+    ctx.fillStyle = '#28e846'
     ctx.beginPath()
-    ctx.arc(ap.x, ap.y, r, 0, Math.PI * 2)
+    ctx.arc(origin.x, origin.y, 4 / scale.value, 0, Math.PI * 2)
     ctx.fill()
-    ctx.stroke()
-    // 方向箭头
     if (poseDrag.value) {
-      const dp = worldToPixel(poseDrag.value.x, poseDrag.value.y)
-      const dx = dp.x - ap.x
-      const dy = dp.y - ap.y
-      const len = Math.sqrt(dx * dx + dy * dy)
-      if (len > 2) {
-        const ux = dx / len
-        const uy = dy / len
-        const arrowLen = Math.max(len, 20 / scale.value)
-        const ex = ap.x + ux * arrowLen
-        const ey = ap.y + uy * arrowLen
-        // 主轴线
-        ctx.strokeStyle = '#fbbf24'
-        ctx.lineWidth = 2.5 / scale.value
-        ctx.beginPath()
-        ctx.moveTo(ap.x, ap.y)
-        ctx.lineTo(ex, ey)
-        ctx.stroke()
-        // 箭头头部
-        const hw = 6 / scale.value
-        const hl = 10 / scale.value
-        ctx.fillStyle = '#fbbf24'
-        ctx.beginPath()
-        ctx.moveTo(ex, ey)
-        ctx.lineTo(ex - ux * hl - uy * hw, ey - uy * hl + ux * hw)
-        ctx.lineTo(ex - ux * hl + uy * hw, ey - uy * hl - ux * hw)
-        ctx.closePath()
-        ctx.fill()
-      }
+      drawHeading(ctx, { ...poseAnchor.value, yaw:lastYaw[gesture.tool] }, 55, '#28e846')
     }
   }
 
   ctx.restore()
+  if (props.model && props.activeView) modelOverlay.value?.renderView({
+    width:canvas.width,height:canvas.height,metres:getEffectiveMapInfo().resolution/scale.value,
+    heading:mapYaw()+rotation.value,tilt:tilt.value,frame:viewFrame.value,
+    center:worldAt({x:canvas.width/2,y:canvas.height/2})
+  })
 }
 
 // 监听图层配置变化
 watch(() => props.layers, () => {
   requestDraw()
 }, { deep: true })
-
-// 监听导航路径变化
-watch(() => props.planData, (newData) => {
-  if (!newData || !newData.poses) {
-    navPathPoints.value = []
-    return
-  }
-  navPathPoints.value = newData.poses.map(p => ({ x: p.position.x, y: p.position.y }))
-  requestDraw()
-}, { deep: true })
-
-// ==================== TF 树管理 ====================
-// ROS 2 的 TF 树通常是: map -> odom -> base_link -> base_scan
-// /tf 话题分别发布各段变换，我们需要缓存并组合它们
-
-const tfTree = {}  // { 'parent|child': { translation, rotation } }
-const tfHistory = {} // timestamped transforms used to align Scan and TF
-
-function normalizeFrame(frame) {
-  return String(frame || '').replace(/^\/+/, '')
-}
 
 function stampToSeconds(stamp) {
   if (!stamp) return null
@@ -655,169 +647,88 @@ function stampToSeconds(stamp) {
   return Number.isFinite(value) && value > 0 ? value : null
 }
 
-function cacheTf(key, tf) {
-  tfTree[key] = tf.transform
-
-  const stamp = stampToSeconds(tf.header?.stamp)
-  if (stamp === null) return
-
-  const history = tfHistory[key] || (tfHistory[key] = [])
-  const previous = history[history.length - 1]
-  if (!previous || previous.stamp !== stamp) {
-    history.push({ stamp, transform: tf.transform })
-  }
-
-  const cutoff = stamp - 5.0
-  while (history.length > 2 && history[0].stamp < cutoff) history.shift()
-}
-
-function getTf(key, stamp = null) {
-  if (stamp === null || !tfHistory[key]?.length) return tfTree[key] || null
-
-  let best = tfHistory[key][0]
-  let bestDelta = Math.abs(best.stamp - stamp)
-  for (const candidate of tfHistory[key]) {
-    const delta = Math.abs(candidate.stamp - stamp)
-    if (delta < bestDelta) {
-      best = candidate
-      bestDelta = delta
-    }
-  }
-  return best.transform
-}
-
 function quatToYaw(q) {
-  return Math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
+  return q ? Math.atan2(2*(q.w*q.z + q.x*q.y), 1 - 2*(q.y*q.y + q.z*q.z)) : 0
 }
-
-/** 组合两个 TF: parent->middle + middle->child = parent->child */
-function composeTf(tfA, tfB) {
-  // tfA: parent -> middle,  tfB: middle -> child
-  const yawA = quatToYaw(tfA.rotation)
-  const cosA = Math.cos(yawA)
-  const sinA = Math.sin(yawA)
-  return {
-    x: tfA.translation.x + (tfB.translation.x * cosA - tfB.translation.y * sinA),
-    y: tfA.translation.y + (tfB.translation.x * sinA + tfB.translation.y * cosA),
-    yaw: yawA + quatToYaw(tfB.rotation)
-  }
+function compose(a, b) {
+  const c = Math.cos(a.yaw), s = Math.sin(a.yaw)
+  return { x:a.x + c*b.x - s*b.y, y:a.y + s*b.x + c*b.y, yaw:a.yaw + b.yaw }
 }
-
-/** 从 TF 树中查找从 fromFrame 到 toFrame 的变换（最多 3 层链式查找） */
-function lookupTf(fromFrame, toFrame, stamp = null) {
-  // 直接路径
-  const directKey = `${fromFrame}|${toFrame}`
-  const directTf = getTf(directKey, stamp)
-  if (directTf) {
-    const tf = directTf
-    return { x: tf.translation.x, y: tf.translation.y, yaw: quatToYaw(tf.rotation) }
-  }
-  
-  // 两段路径: fromFrame -> middle -> toFrame
-  for (const key in tfTree) {
-    const [parent, child] = key.split('|')
-    if (parent === fromFrame) {
-      const secondKey = `${child}|${toFrame}`
-      const firstTf = getTf(key, stamp)
-      const secondTf = getTf(secondKey, stamp)
-      if (firstTf && secondTf) {
-        return composeTf(firstTf, secondTf)
-      }
-    }
-  }
-  
-  return null
+const zeroPose = { x:0, y:0, yaw:0 }
+function lookupPose(target, source) {
+  return projectPose(props.frames.lookup(target, source), zeroPose)
 }
-
-// 处理 TF 数据：缓存所有变换段，然后组合查询
-watch(() => props.tfData, (newData) => {
-  if (!newData || !newData.transforms) return
-  
-  // 1. 将所有收到的 TF 存入树
-  for (const tf of newData.transforms) {
-    const parent = normalizeFrame(tf.header.frame_id)
-    const child = normalizeFrame(tf.child_frame_id)
-    const key = `${parent}|${child}`
-    cacheTf(key, tf)
+function inView(pose) {
+  return pose && projectPose(frameTransform(pose.frame || 'map'), pose)
+}
+function distanceToTarget(target) {
+  if (!props.navigationTf || !target || !props.frameRevision) return null
+  // Keep arrival checks in the stored goal's frame, independent of the view.
+  const frame = target.frame || 'map'
+  const robot = lookupPose(frame,'base_link') || lookupPose(frame,'base_footprint')
+  return robot ? Math.hypot(robot.x-target.x, robot.y-target.y) : null
+}
+function updateScene() {
+  const mapFrame = normalizeFrame(props.mapData?.header?.frame_id)
+  if (props.fixedFrame) viewFrame.value = props.fixedFrame
+  else {
+    const useOdom = !lookupPose('map','odom') && (lookupPose('odom','base_link') || lookupPose('odom','base_footprint'))
+    const localized = lookupPose('map','base_link') || lookupPose('map','base_footprint')
+    viewFrame.value = props.isNavigating ? 'map' : mapFrame || (useOdom ? 'odom' : localized ? 'map' : props.model?.frame || 'map')
   }
-  
-  // 2. 查找机器人在地图坐标系中的位置 (map -> base_link)
-  //    支持链: map -> odom -> base_link 或 map -> odom -> base_footprint
-  let pose = lookupTf('map', 'base_link')
-  if (!pose) pose = lookupTf('map', 'base_footprint')
-  // 无地图时退回到 odom 坐标系
-  if (!pose) pose = lookupTf('odom', 'base_link')
-  if (!pose) pose = lookupTf('odom', 'base_footprint')
-  
-  if (pose) {
-    robotPose.value = pose
-  }
-
-  // 3. 寻找传感器偏移 (base_link -> laser/base_scan)
-  const scanFrame = normalizeFrame(props.scanData?.header?.frame_id || 'base_scan')
-  let sOffset = lookupTf('base_link', scanFrame)
-  if (!sOffset) sOffset = lookupTf('base_footprint', scanFrame)
-  if (sOffset) {
-    sensorOffset.value = sOffset
-  }
-
-  if (props.scanData) updateLaserPoints(props.scanData)
-  requestDraw()
-}, { deep: true })
-
-function updateLaserPoints(newData) {
-  if (!newData || !newData.ranges) return
-  
+  modelLocated.value = !!(props.model && lookupPose(viewFrame.value,props.model.frame))
+  robotPose.value = lookupPose(viewFrame.value, 'base_link') || lookupPose(viewFrame.value, 'base_footprint')
+  updateLaserPoints(props.scanData)
+  const path = props.planData
+  const pathFrame = path?.header?.frame_id || 'map'
   const points = []
-  const scanStamp = stampToSeconds(newData.header?.stamp)
-  let pose = lookupTf('map', 'base_link', scanStamp)
-  if (!pose) pose = lookupTf('map', 'base_footprint', scanStamp)
-  if (!pose) pose = lookupTf('odom', 'base_link', scanStamp)
-  if (!pose) pose = lookupTf('odom', 'base_footprint', scanStamp)
-  pose = pose || robotPose.value || { x: 0, y: 0, yaw: 0 }
-  const offset = sensorOffset.value || { x: 0, y: 0, yaw: 0 }
-  
-  // 1. 计算传感器在地图坐标系中的绝对位置和朝向
-  // 传感器在机器人的位置 = robotPose + rotated(sensorOffset)
-  const cosR = Math.cos(pose.yaw)
-  const sinR = Math.sin(pose.yaw)
-  const sensorX = pose.x + (offset.x * cosR - offset.y * sinR)
-  const sensorY = pose.y + (offset.x * sinR + offset.y * cosR)
-  const sensorYaw = pose.yaw + offset.yaw
-  
-  // 2. 将雷达测距点转换为地图坐标
-  for (let i = 0; i < newData.ranges.length; i++) {
-    const r = newData.ranges[i]
-    if (r < newData.range_min || r > newData.range_max || isNaN(r)) continue
-    
-    const angle = newData.angle_min + i * newData.angle_increment
-    const totalAngle = sensorYaw + angle
-    points.push({
-      x: sensorX + r * Math.cos(totalAngle),
-      y: sensorY + r * Math.sin(totalAngle)
-    })
+  missingPathFrame = ''
+  for (const pose of path?.poses || []) {
+    const frame = pose.frame || pathFrame
+    const tf = props.frames.lookup(viewFrame.value, frame)
+    if (!tf) { missingPathFrame = frame; break }
+    points.push(projectPose(tf, pose.position || pose.pose.position))
+  }
+  navPathPoints.value = missingPathFrame ? [] : points
+  requestDraw()
+}
+watch([() => props.frameRevision, () => props.fixedFrame, () => props.planData, () => props.isNavigating],
+  updateScene, {immediate:true})
+watch(() => props.model, model => {
+  updateScene()
+  if (model && !offscreenCanvas && !props.scanData && !userMoved && modelLocated.value) focusModel(false)
+})
+watch(() => props.externalGoal, requestDraw)
+function updateLaserPoints(data) {
+  const points = []
+  if (data?.ranges) {
+    const tf = props.frames.lookup(viewFrame.value, data.header?.frame_id || 'base_scan', stampToSeconds(data.header?.stamp))
+    if (tf) for (let i = 0; i < data.ranges.length; i++) {
+      const r = data.ranges[i]
+      if (!Number.isFinite(r) || r < data.range_min || r > data.range_max) continue
+      const a = data.angle_min + i*data.angle_increment
+      const x=r*Math.cos(a), y=r*Math.sin(a), e=tf.elements
+      points.push({x:e[12]+e[0]*x+e[4]*y, y:e[13]+e[1]*x+e[5]*y})
+    }
   }
   laserPoints.value = points
   requestDraw()
 }
-
-// 处理雷达数据：使用雷达帧自己的时间戳匹配 TF，避免运动时扫描点向后拖影
-watch(() => props.scanData, (newData) => {
-  updateLaserPoints(newData)
-}, { deep: true })
+watch(() => props.scanData, updateLaserPoints)
 
 function autoFit() {
-  if (!offscreenCanvas || !containerRef.value) return
+  if (!containerRef.value) return
   const container = containerRef.value
   const cw = container.clientWidth
   const ch = container.clientHeight
-  const mw = offscreenCanvas.width
-  const mh = offscreenCanvas.height
+  const { width: mw, height: mh } = getEffectiveMapInfo()
 
   if (cw === 0 || ch === 0) return
 
   // 计算缩放：使图像完整放入容器，且充满其中一个维度
-  const s = Math.min(cw / mw, ch / mh)
+  if (offscreenCanvas) fitNextMap = false
+  const s = offscreenCanvas ? Math.min(cw / mw, ch / mh) : 1
+  rotation.value=0; tilt.value=0
   scale.value = s
   offsetX.value = (cw - mw * s) / 2
   offsetY.value = (ch - mh * s) / 2
@@ -825,197 +736,210 @@ function autoFit() {
 }
 
 function resetView() {
+  userMoved=false
   autoFit()
+  if (props.model && modelLocated.value && !offscreenCanvas && !props.scanData) focusModel(false)
 }
-
-// ---- 事件处理 ----
-function onWheel(e) {
-  const zoomSpeed = 0.1
-  const oldScale = scale.value
-  const delta = -Math.sign(e.deltaY)
-  const newScale = Math.max(0.1, Math.min(20, oldScale * (1 + delta * zoomSpeed)))
-  
-  // 获取鼠标在 Canvas 上的相对坐标
-  const rect = containerRef.value.getBoundingClientRect()
-  const mouseX = e.clientX - rect.left
-  const mouseY = e.clientY - rect.top
-
-  // 以鼠标位置为中心缩放
-  offsetX.value = mouseX - (mouseX - offsetX.value) * (newScale / oldScale)
-  offsetY.value = mouseY - (mouseY - offsetY.value) * (newScale / oldScale)
-  
-  scale.value = newScale
+function focusModel(manual=true) {
+  const box=containerRef.value
+  const pose=props.model && lookupPose(viewFrame.value,props.model.frame)
+  if (!pose || !box?.clientWidth) return
+  if (manual) userMoved=true
+  const {resolution}=getEffectiveMapInfo()
+  scale.value=Math.min(500, Math.min(box.clientWidth,box.clientHeight)*.34*resolution/props.model.size)
+  anchor(worldToPixel(pose.x,pose.y),{x:box.clientWidth/2,y:box.clientHeight/2})
   requestDraw()
 }
-
-function onMouseDown(e) {
-  if (props.isSettingPose) {
-    // 初始位置模式: 记录按下点，禁止地图拖动
-    const rect = containerRef.value.getBoundingClientRect()
-    const cx = (e.clientX - rect.left - offsetX.value) / scale.value
-    const cy = (e.clientY - rect.top - offsetY.value) / scale.value
-    const info = getEffectiveMapInfo()
-    poseAnchor.value = {
-      x: info.origin.position.x + cx * info.resolution,
-      y: info.origin.position.y + (info.height - 1 - cy) * info.resolution
-    }
-    poseDrag.value = null
+function localPoint(event) {
+  const rect=containerRef.value.getBoundingClientRect()
+  return {x:event.clientX-rect.left,y:event.clientY-rect.top}
+}
+function mapPixel(point) {
+  const x=(point.x-offsetX.value)/scale.value
+  const y=(point.y-offsetY.value)/(scale.value*Math.cos(tilt.value))
+  const c=Math.cos(rotation.value),s=Math.sin(rotation.value)
+  return {x:c*x+s*y,y:-s*x+c*y}
+}
+function worldAt(point) {
+  const p=mapPixel(point)
+  return pixelToWorld(p.x,p.y)
+}
+function anchor(pixel,screen) {
+  const c=Math.cos(rotation.value),s=Math.sin(rotation.value)
+  offsetX.value=screen.x-scale.value*(c*pixel.x-s*pixel.y)
+  offsetY.value=screen.y-scale.value*Math.cos(tilt.value)*(s*pixel.x+c*pixel.y)
+}
+function adjustCamera(start,end,angle,pitch,factor) {
+  const pixel=mapPixel(start)
+  rotation.value=Math.atan2(Math.sin(rotation.value+angle),Math.cos(rotation.value+angle))
+  tilt.value=Math.max(-Math.PI*.42,Math.min(Math.PI*.42,tilt.value+pitch))
+  scale.value=Math.max(.02,Math.min(500,scale.value*factor))
+  anchor(pixel,end)
+  userMoved=true
+  requestDraw()
+}
+function onWheel(e) {
+  const p=localPoint(e)
+  adjustCamera(p,p,0,0,Math.exp(-Math.sign(e.deltaY)*.14))
+}
+function pair() {
+  const [a,b]=[...pointers.values()]
+  return {center:{x:(a.x+b.x)/2,y:(a.y+b.y)/2},angle:Math.atan2(b.y-a.y,b.x-a.x),dist:Math.max(1,Math.hypot(b.x-a.x,b.y-a.y))}
+}
+function onPointerDown(e) {
+  if (e.button>2) return
+  containerRef.value.focus({preventScroll:true})
+  containerRef.value.setPointerCapture(e.pointerId)
+  const p=localPoint(e)
+  pointers.set(e.pointerId,p)
+  if (pointers.size>1) {
+    poseAnchor.value=null; poseDrag.value=null; lastTouch=null
+    gesture={kind:'multi'}
+  } else {
+    const kind=e.button===1 || e.shiftKey ? 'pan' : e.button===2 ? 'zoom' : placingPose.value ? 'pose' : 'orbit'
+    gesture={kind,start:p,moved:false,tool:props.poseTool,frame:viewFrame.value}
+    if(kind==='pose') {poseAnchor.value=worldAt(p); poseDrag.value=null}
+  }
+  isDragging.value=true
+  requestDraw()
+}
+function onPointerMove(e) {
+  const old=pointers.get(e.pointerId)
+  if (!old || !gesture) return
+  const before=pointers.size===2 ? pair() : null
+  const p=localPoint(e)
+  pointers.set(e.pointerId,p)
+  if (pointers.size>2) return
+  if (before) {
+    const after=pair()
+    adjustCamera(before.center,after.center,after.angle-before.angle,0,after.dist/before.dist)
+    return
+  }
+  if (gesture.kind==='multi') return
+  const dx=p.x-old.x,dy=p.y-old.y
+  if (gesture.kind==='pose') {
+    updateHeading(p)
     requestDraw()
     return
   }
-  isDragging = true
-  lastMouseX = e.clientX
-  lastMouseY = e.clientY
+  if (Math.hypot(p.x-gesture.start.x,p.y-gesture.start.y)>3) gesture.moved=true
+  if (!gesture.moved) return
+  const box=containerRef.value, center={x:box.clientWidth/2,y:box.clientHeight/2}
+  if (gesture.kind==='pan') adjustCamera(old,p,0,0,1)
+  if (gesture.kind==='orbit') adjustCamera(center,center,dx*.008,-dy*.008,1)
+  if (gesture.kind==='zoom') adjustCamera(gesture.start,gesture.start,0,0,Math.exp(-dy*.012))
 }
-
-function onMouseMove(e) {
-  if (props.isSettingPose && poseAnchor.value) {
-    const rect = containerRef.value.getBoundingClientRect()
-    const cx = (e.clientX - rect.left - offsetX.value) / scale.value
-    const cy = (e.clientY - rect.top - offsetY.value) / scale.value
-    const info = getEffectiveMapInfo()
-    poseDrag.value = {
-      x: info.origin.position.x + cx * info.resolution,
-      y: info.origin.position.y + (info.height - 1 - cy) * info.resolution
+function onPointerCancel(e) {
+  if (!pointers.delete(e.pointerId)) return
+  poseAnchor.value=null;poseDrag.value=null;lastTouch=null
+  if (!pointers.size) {gesture=null;isDragging.value=false}
+  requestDraw()
+}
+let lastGestureEnd=-Infinity, lastTouchAction=-Infinity
+function onPointerUp(e) {
+  if (!pointers.delete(e.pointerId) || !gesture) return
+  if (gesture.kind==='pose') {
+    if (e.button===0 && poseAnchor.value && props.connected && props.activeView &&
+        props.poseTool===gesture.tool && viewFrame.value===gesture.frame) {
+      updateHeading(localPoint(e))
+      finishPose()
     }
-    draw()
+    lastGestureEnd=performance.now()
+    cancelGesture()
     return
   }
-  if (!isDragging) return
-  const dx = e.clientX - lastMouseX
-  const dy = e.clientY - lastMouseY
-  offsetX.value += dx
-  offsetY.value += dy
-  lastMouseX = e.clientX
-  lastMouseY = e.clientY
-  draw()
+  if (gesture.moved || gesture.kind==='multi') {
+    lastGestureEnd=performance.now()
+    lastTouch=null
+  } else if (e.pointerType==='touch') {
+    const p=localPoint(e), now=performance.now()
+    if (lastTouch && now-lastTouch.time<360 && Math.hypot(lastTouch.x-p.x,lastTouch.y-p.y)<15) {
+      pickPresetAt(p)
+      lastTouchAction=now;lastTouch=null
+    } else lastTouch={...p,time:now}
+  }
+  if (!pointers.size) {gesture=null;isDragging.value=false}
+}
+function updateHeading(point) {
+  if (!poseAnchor.value) return
+  const end = worldAt(point)
+  const dx = end.x - poseAnchor.value.x, dy = end.y - poseAnchor.value.y
+  if (Math.hypot(dx,dy) < 1e-8) return
+  poseDrag.value = end
+  lastYaw[gesture.tool] = Math.atan2(dy, dx)
 }
 
-function onMouseUp(e) {
-  if (props.isSettingPose && poseAnchor.value) {
-    let yaw = 0
-    if (poseDrag.value) {
-      const dx = poseDrag.value.x - poseAnchor.value.x
-      const dy = poseDrag.value.y - poseAnchor.value.y
-      if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
-        yaw = Math.atan2(dy, dx)
-      }
-    }
-    emit('initial-pose-set', { x: poseAnchor.value.x, y: poseAnchor.value.y, yaw })
-    emit('update:isSettingPose', false) // 自动退出设置模式
-    
-    // 显示成功提示
-    settingMsg.value = '初始位置设置成功'
-    setTimeout(() => { settingMsg.value = '' }, 3000)
-
-    // 清除预览
-    poseAnchor.value = null
-    poseDrag.value = null
-    draw()
-    return
-  }
-  isDragging = false
+function toNavigationPose(pose, target) {
+  const tf = props.frames.lookup(target, viewFrame.value)
+  if (tf) return { ...projectPose(tf, pose), frame:target }
+  settingMsg.value = '等待 TF · ' + viewFrame.value + ' → ' + target
+  clearTimeout(settingTimer)
+  settingTimer = setTimeout(() => { settingMsg.value = '' }, 3000)
+  return null
 }
-
-// 双击设定导航目标点
-function onDblClick(e) {
-  if (!props.isNavigating) return
-  if (props.isSettingPose) return
-  const rect = containerRef.value.getBoundingClientRect()
-  const canvasX = (e.clientX - rect.left - offsetX.value) / scale.value
-  const canvasY = (e.clientY - rect.top - offsetY.value) / scale.value
-  // 将 Canvas 像素坐标转换回世界坐标
-  const info = getEffectiveMapInfo()
-  const res = info.resolution
-  const origin = info.origin.position
-  const q = info.origin.orientation || { x: 0, y: 0, z: 0, w: 1 }
-  const mapYaw = Math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
-  const localX = canvasX * res, localY = (info.height - 1 - canvasY) * res
-  const wx = origin.x + localX * Math.cos(mapYaw) - localY * Math.sin(mapYaw)
-  const wy = origin.y + localX * Math.sin(mapYaw) + localY * Math.cos(mapYaw)
-  if (props.isPickingPreset) {
-    if (!props.mapData) return
-    emit('preset-selected', { x: wx, y: wy, yaw: 0 })
-    return
-  }
-  if (props.multiPointMode) {
-    emit('waypoint-add', { x: wx, y: wy })
+function finishPose() {
+  const tool = gesture.tool
+  const target = (props.fixedFrame || props.isNavigating) ? 'map' : gesture.frame
+  const pose = toNavigationPose({ ...poseAnchor.value, yaw:lastYaw[tool] }, target)
+  if (!pose) return
+  if (tool === 'initial') {
+    emit('initial-pose-set', pose)
+    settingMsg.value = '已发送初始位姿'
+  } else if (props.multiPointMode && props.isNavigating) {
+    emit('waypoint-add', pose)
+    settingMsg.value = '航点已加入队列'
   } else {
     singleGoalReachedNotified.value = false
-    goalPoint.value = { x: wx, y: wy }
-    emit('goal-set', { x: wx, y: wy })
+    goalPoint.value = pose
+    emit('goal-set', pose)
+    settingMsg.value = '已发送导航目标'
   }
-  draw()
+  clearTimeout(settingTimer)
+  settingTimer = setTimeout(() => { settingMsg.value = '' }, 1800)
+  poseAnchor.value = null
+  poseDrag.value = null
+  emit('update:poseTool','')
+  requestDraw()
 }
 
-// 触摸支持
-let initialPinchDist = 0
-let lastPinchCenter = { x: 0, y: 0 }
-
-function getPinchDist(e) {
-  const dx = e.touches[0].clientX - e.touches[1].clientX
-  const dy = e.touches[0].clientY - e.touches[1].clientY
-  return Math.sqrt(dx * dx + dy * dy)
-}
-
-function getPinchCenter(e) {
-  return {
-    x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-    y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+function cancelGesture() {
+  gesture = null
+  poseAnchor.value = null
+  poseDrag.value = null
+  lastTouch = null
+  isDragging.value = false
+  for (const id of pointers.keys()) {
+    if (containerRef.value?.hasPointerCapture(id)) containerRef.value.releasePointerCapture(id)
   }
+  pointers.clear()
+  requestDraw()
+}
+watch([() => props.poseTool, () => props.connected, () => props.activeView, viewFrame], cancelGesture)
+watch(viewFrame, () => { userMoved = false; autoFit() })
+function onWindowBlur() {
+  cancelGesture()
+  if (placingPose.value) emit('update:poseTool','')
+}
+function onDblClick(e) {
+  if (e.button!==0 || performance.now()-Math.max(lastGestureEnd,lastTouchAction)<400) return
+  pickPresetAt(localPoint(e))
+}
+function pickPresetAt(point) {
+  if (props.poseTool !== 'preset' || !props.mapData || !props.isNavigating) return
+  const pose = toNavigationPose(worldAt(point), 'map')
+  if (pose) emit('preset-selected', pose)
 }
 
-function onTouchStart(e) {
-  if (e.touches.length === 1) {
-    onMouseDown(e.touches[0])
-  } else if (e.touches.length === 2) {
-    isDragging = false // 缩放时停止拖动
-    initialPinchDist = getPinchDist(e)
-    lastPinchCenter = getPinchCenter(e)
-  }
-}
-
-function onTouchMove(e) {
-  if (e.touches.length === 1) {
-    onMouseMove(e.touches[0])
-  } else if (e.touches.length === 2) {
-    const dist = getPinchDist(e)
-    const center = getPinchCenter(e)
-    const rect = containerRef.value.getBoundingClientRect()
-    
-    const zoomFactor = dist / initialPinchDist
-    const oldScale = scale.value
-    const newScale = Math.max(0.1, Math.min(20, oldScale * zoomFactor))
-    
-    // 以双指中心缩放
-    const cx = center.x - rect.left
-    const cy = center.y - rect.top
-    
-    offsetX.value = cx - (cx - offsetX.value) * (newScale / oldScale)
-    offsetY.value = cy - (cy - offsetY.value) * (newScale / oldScale)
-    
-    scale.value = newScale
-    initialPinchDist = dist
-    draw()
-  }
-}
-
-// 监听窗口大小变化
-window.addEventListener('resize', () => {
-  draw()
+let observer
+watch(() => props.mapData, data => {
+  updateScene()
+  if (data?.info && data.data) updateOffscreenCanvas(data)
+  else { offscreenCanvas = null; mapInfo.value = null; fitNextMap = true; requestDraw() }
 })
-
-watch(() => props.mapData, (newData) => {
-  if (newData && newData.info && newData.data) {
-    updateOffscreenCanvas(newData)
-  }
-}, { deep: true })
-
-watch(() => props.costmapData, (newData) => {
-  if (newData && newData.info && newData.data) {
-    updateCostmapCanvas(newData)
-  }
-}, { deep: true })
+watch(() => props.costmapData, data => {
+  if (data?.info && data.data) updateCostmapCanvas(data)
+  else { costmapCanvas = null; requestDraw() }
+})
 
 watch(() => props.multiPointMode, (enabled) => {
   if (enabled) {
@@ -1036,19 +960,16 @@ watch(() => props.activeWaypoint, (wp) => {
   reachedWaypointKey.value = `${wp.x.toFixed(3)}_${wp.y.toFixed(3)}`
 }, { deep: true })
 
-watch(() => [robotPose.value, props.activeWaypoint, props.multiPointMode, props.isNavigating], () => {
+watch(() => [props.frameRevision, props.activeWaypoint, props.multiPointMode, props.isNavigating], () => {
   if (!props.isNavigating || !props.multiPointMode) return
-  if (!robotPose.value || !props.activeWaypoint) return
-  const dx = robotPose.value.x - props.activeWaypoint.x
-  const dy = robotPose.value.y - props.activeWaypoint.y
-  const dist = Math.sqrt(dx * dx + dy * dy)
-  if (dist <= waypointReachThreshold && reachedWaypointKey.value) {
+  const dist = distanceToTarget(props.activeWaypoint)
+  if (dist !== null && dist <= waypointReachThreshold && reachedWaypointKey.value) {
     reachedWaypointKey.value = ''
     emit('waypoint-reached')
   }
 }, { deep: true })
 
-watch(() => [props.isNavigating, props.multiPointMode, goalPoint.value, robotPose.value, props.navFeedback], () => {
+watch(() => [props.isNavigating, props.multiPointMode, goalPoint.value, props.frameRevision, props.navFeedback], () => {
   if (!props.isNavigating || props.multiPointMode || !goalPoint.value || singleGoalReachedNotified.value) return
 
   let reached = false
@@ -1057,12 +978,8 @@ watch(() => [props.isNavigating, props.multiPointMode, goalPoint.value, robotPos
     reached = true
   }
 
-  if (!reached && robotPose.value) {
-    const dx = robotPose.value.x - goalPoint.value.x
-    const dy = robotPose.value.y - goalPoint.value.y
-    const dist = Math.sqrt(dx * dx + dy * dy)
-    if (dist <= 0.10) reached = true
-  }
+  const distance = distanceToTarget(goalPoint.value)
+  if (distance !== null && distance <= 0.10) reached = true
 
   if (reached) {
     singleGoalReachedNotified.value = true
@@ -1080,8 +997,22 @@ watch(() => [props.isNavigating, props.multiPointMode], ([navigating, multi]) =>
 })
 
 onMounted(() => {
+  window.addEventListener('blur',onWindowBlur)
+  observer = new ResizeObserver(() => {
+    if (!containerRef.value?.clientWidth) return
+    if (fitNextMap && !userMoved) resetView()
+    requestDraw()
+  })
+  observer.observe(containerRef.value)
   if (props.mapData) updateOffscreenCanvas(props.mapData)
   if (props.costmapData) updateCostmapCanvas(props.costmapData)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('blur',onWindowBlur)
+  observer?.disconnect()
+  clearTimeout(settingTimer)
+  clearTimeout(clearNoticeTimer)
 })
 
 defineExpose({
@@ -1093,11 +1024,24 @@ defineExpose({
 </script>
 
 <style scoped>
-.header-left {
+.header-left, .pose-tools {
+  gap: 6px;
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
 }
+.pose-tool {
+  display:inline-flex; align-items:center; gap:4px; padding:5px 7px;
+  border:1px solid transparent; border-radius:4px; background:transparent;
+  color:#243447; cursor:pointer; font:500 14px/1.3 var(--font-main); white-space:nowrap;
+}
+.pose-tool:hover:enabled { background:#f8fafc; border-color:#bdc8d1; }
+.pose-tool[aria-pressed=true] { background:#e6f6e9; border-color:#72a780; }
+.pose-tool:disabled { opacity:.5; cursor:default; }
+.tool-arrow { width:17px; height:12px; background:#13a039; transform:rotate(-38deg);
+  clip-path:polygon(0 40%,58% 40%,58% 10%,100% 50%,58% 90%,58% 60%,0 60%); }
 .header-right {
+  flex-wrap:wrap;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1108,7 +1052,7 @@ defineExpose({
   color: #334155;
   padding: 2px 8px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 14px;
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -1127,23 +1071,6 @@ defineExpose({
 .btn-mini-save:hover:not(:disabled) {
   background: rgba(52, 211, 153, 0.3);
 }
-.btn-mini-pose {
-  background: rgba(251, 191, 36, 0.15);
-  border-color: rgba(251, 191, 36, 0.4);
-  color: #b45309;
-}
-.btn-mini-pose:hover {
-  background: rgba(251, 191, 36, 0.3);
-}
-.btn-mini-pose.active {
-  background: rgba(251, 191, 36, 0.3);
-  border-color: #b45309;
-  animation: pose-pulse 1.2s ease-in-out infinite;
-}
-@keyframes pose-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.4); }
-  50% { box-shadow: 0 0 0 4px rgba(251, 191, 36, 0); }
-}
 .nav-status-mini {
   color: #15803d;
   font-size: 11px;
@@ -1157,12 +1084,13 @@ defineExpose({
   position: relative;
 }
 .map-canvas-container {
+  touch-action:none;
   width: 100%;
   flex: 1;
   min-height: 0;
   position: relative;
   overflow: hidden;
-  background: #f3f4f6;
+  background: #303030;
   cursor: grab;
 }
 .map-canvas-container:active {
@@ -1203,9 +1131,7 @@ canvas {
   border: 1px solid rgba(99, 102, 241, 0.4);
 }
 .hint-pose {
-  color: #b45309;
-  background: rgba(251, 191, 36, 0.25);
-  border: 1px solid rgba(251, 191, 36, 0.4);
+  color:#e6ffed; background:#173d2cea; border:1px solid #5f9f73; text-align:center; width:max-content; max-width:95%;
 }
 
 .map-overlay-feedback {
@@ -1324,4 +1250,6 @@ canvas {
 }
 .btn-modal-confirm:hover:not(:disabled) { background: #1d4ed8; }
 .btn-modal-confirm:disabled { opacity: 0.4; cursor: not-allowed; }
+.rv-status { display:flex; align-items:center; flex-wrap:wrap; gap:4px 14px; padding:5px 10px; background:#e8eaed; color:#394651; border-top:1px solid #bfc6cd; font-size:14px; font-variant-numeric:tabular-nums; }
+.rv-status code { font-size:14px; } .frame-warning { color:#855316; }
 </style>

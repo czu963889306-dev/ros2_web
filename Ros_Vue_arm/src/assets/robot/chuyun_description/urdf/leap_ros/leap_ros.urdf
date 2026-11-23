@@ -1,0 +1,195 @@
+<?xml version="1.0"?>
+<robot name="leap_ros">
+  <material name="dark_gray">
+    <color rgba="0.08 0.08 0.08 1.0"/>
+  </material>
+  <material name="matte_black">
+    <color rgba="0.01 0.01 0.01 1.0"/>
+  </material>
+  <material name="blue">
+    <color rgba="0.05 0.18 0.8 1.0"/>
+  </material>
+  <material name="silver">
+    <color rgba="0.65 0.68 0.70 1.0"/>
+  </material>
+
+  <link name="base_footprint"/>
+
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 0.06205" rpy="0 0 0"/>
+  </joint>
+
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 0.02" rpy="0 0 0"/>
+      <mass value="2.0"/>
+      <inertia ixx="0.01" ixy="0.0" ixz="0.0" iyy="0.02" iyz="0.0" izz="0.02"/>
+    </inertial>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.1445 0.095 0.0805"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <link name="chassis_link">
+    <visual>
+      <origin xyz="0.00225 0 -0.00925" rpy="0 0 1.57079632679"/>
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros/chassis.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="blue"/>
+    </visual>
+  </link>
+  <joint name="chassis_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="chassis_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="drive_wheels_link">
+    <visual>
+      <origin xyz="0.053 0 0.020298" rpy="0 0 1.57079632679"/>
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros/drive_wheels.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="matte_black"/>
+    </visual>
+  </link>
+  <joint name="drive_wheels_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="drive_wheels_link"/>
+    <origin xyz="-0.05075 0 -0.029548" rpy="0 0 0"/>
+  </joint>
+
+  <link name="left_wheel_link"/>
+  <joint name="left_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="left_wheel_link"/>
+    <origin xyz="-0.05075 0.081 -0.02955" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <link name="right_wheel_link"/>
+  <joint name="right_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="right_wheel_link"/>
+    <origin xyz="-0.05075 -0.081 -0.02955" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <link name="caster_link">
+    <visual>
+      <origin xyz="-0.06294 0.00001 0.0419" rpy="0 0 1.57079632679"/>
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros/caster_wheel.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="matte_black"/>
+    </visual>
+  </link>
+  <joint name="caster_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="caster_link"/>
+    <origin xyz="0.06519 -0.00001 -0.05115" rpy="0 0 0"/>
+  </joint>
+
+  <link name="battery_link">
+    <visual>
+      <origin xyz="0.027 0 -0.0145" rpy="0 0 1.57079632679"/>
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros/battery.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="dark_gray"/>
+    </visual>
+  </link>
+  <joint name="battery_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="battery_link"/>
+    <origin xyz="-0.02475 0 0.00525" rpy="0 0 0"/>
+  </joint>
+
+  <link name="controller_link">
+    <visual>
+      <origin xyz="0.027 0.000108 -0.027255" rpy="0 0 1.57079632679"/>
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros/controller.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="silver"/>
+    </visual>
+  </link>
+  <joint name="controller_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="controller_link"/>
+    <origin xyz="-0.02475 -0.000108 0.018005" rpy="0 0 0"/>
+  </joint>
+
+  <link name="tt_motor_link">
+    <visual>
+      <origin xyz="0.029154 0 0.0203" rpy="0 0 1.57079632679"/>
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros/tt_motor.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="dark_gray"/>
+    </visual>
+  </link>
+  <joint name="tt_motor_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="tt_motor_link"/>
+    <origin xyz="-0.026904 0 -0.02955" rpy="0 0 0"/>
+  </joint>
+
+  <link name="laser_frame">
+    <visual>
+      <origin xyz="0.02495 -0.000062 -0.07295" rpy="0 0 1.57079632679"/>
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros/lidar.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="matte_black"/>
+    </visual>
+  </link>
+  <joint name="laser_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="laser_frame"/>
+    <origin xyz="-0.0227 0.000062 0.0637" rpy="0 0 0"/>
+  </joint>
+
+  <link name="camera_link">
+    <visual>
+      <origin xyz="-0.045466 0.000603 -0.061658" rpy="0 0 1.57079632679"/>
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros/camera.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="matte_black"/>
+    </visual>
+  </link>
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+    <origin xyz="0.047716 -0.000603 0.052408" rpy="0 0 0"/>
+  </joint>
+
+  <link name="ultrasonic_link">
+    <visual>
+      <origin xyz="-0.040401 0 -0.0215" rpy="0 0 1.57079632679"/>
+      <geometry>
+        <mesh filename="package://chuyun_description/meshes/leap_ros/ultrasonic.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="silver"/>
+    </visual>
+  </link>
+  <joint name="ultrasonic_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="ultrasonic_link"/>
+    <origin xyz="0.042651 0 0.01225" rpy="0 0 0"/>
+  </joint>
+
+  <link name="imu_link"/>
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0 0 0.03" rpy="0 0 0"/>
+  </joint>
+</robot>

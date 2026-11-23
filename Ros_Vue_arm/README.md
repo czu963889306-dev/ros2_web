@@ -1,8 +1,8 @@
-# 机器人中控台 (Robot Control Console)
+# 出云中控台
 
 ## 项目简介
 
-这是一个基于 Web 的机器人中控台，用于实时监控和控制 ROS 2 机器人。该项目集成了地图展示、摇杆控制、状态监测以及建图管理等功能。
+出云中控台基于 Web，用于实时监控和控制 ROS 2 机器人。该项目集成了地图展示、摇杆控制、状态监测以及建图管理等功能。
 
 项目演示视频：[Bilibili](https://www.bilibili.com/video/BV1wx326wEw6/?vd_source=339f0240733dcda285627ff53cbd145f)
 

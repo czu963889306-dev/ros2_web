@@ -2,6 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import { PointStore, RosBridge, installNavigation } from './navigation.js';
 import { installModelSettings, installVoiceSettings } from './model_settings.js';
+import { installRobotModel } from './robot_model_settings.js';
+import { installRqtTools } from './rqt_tools.js';
+import { installRosDomain } from './ros_domain.js';
 import { installSystemStatus } from './system_status.js';
 import { installWifi } from './wifi.js';
 import { installServiceManager } from './service_manager.js';
@@ -31,7 +34,10 @@ app.use(cors());
 app.use(express.json());
 installModelSettings(app, __dirname);
 installVoiceSettings(app, __dirname);
-installSystemStatus(app);
+installSystemStatus(app, { voiceConfig: path.resolve(__dirname, '../voice_assistant/config.yaml') });
+installRosDomain(app, __dirname);
+installRqtTools(app, __dirname);
+installRobotModel(app, __dirname);
 installWifi(app);
 installServiceManager(app, __dirname);
 
@@ -63,8 +69,9 @@ function loadConfig() {
 let navigator;
 const navigationRunning = () => navigator?.running() || false;
 const navigationBridge = new RosBridge(__dirname);
+const pointStore = new PointStore(path.join(__dirname, 'navigation_points.json'), () => loadConfig().maps_dir || loadConfig().save_map.save_dir);
 installNavigation(app, {
-    store: new PointStore(path.join(__dirname, 'navigation_points.json'), () => loadConfig().maps_dir || loadConfig().save_map.save_dir),
+    store: pointStore,
     bridge: navigationBridge, session: () => navigator?.session() || {}, running: navigationRunning
 });
 
@@ -107,60 +114,66 @@ app.get('/api/runtime_config', (req, res) => {
     });
 });
 
-// 提交机械臂末端位姿。success=true 仅表示控制器已接受目标。
+// The arm upgrade is an optional module; other console behavior is shared.
+if (fs.existsSync(path.join(__dirname, 'arm_pose_route.js'))) {
+    const { registerArmPoseRoutes } = await import('./arm_pose_route.js');
+    registerArmPoseRoutes(app, loadConfig);
+} else {
+    // 提交机械臂末端位姿。success=true 仅表示控制器已接受目标。
 
-app.post('/api/arm/pose', (req, res) => {
-    const fields = ['x', 'y', 'z', 'pitch_deg'];
-    const request = Object.fromEntries(fields.map((field) => [field, Number(req.body?.[field])]));
-    if (fields.some((field) => !Number.isFinite(request[field]))) {
-        return res.status(400).json({ success: false, error: 'X、Y、Z 和俯仰角必须是有效数字' });
-    }
-
-    const config = loadConfig();
-    const serviceName = config.services?.set_arm_pose || '/set_arm_pose';
-    if (!/^\/[a-zA-Z0-9_/]+$/.test(serviceName)) {
-        return res.status(500).json({ success: false, error: '机械臂服务名配置无效' });
-    }
-
-    const payload = `{x: ${request.x}, y: ${request.y}, z: ${request.z}, pitch_deg: ${request.pitch_deg}}`;
-    const command = [
-        ROS_SETUP_COMMAND,
-        `ros2 service call ${serviceName} leap_interfaces/srv/SetArmPose '${payload}'`
-    ].join(' && ');
-
-    const proc = spawn('bash', ['-lc', command], { stdio: ['ignore', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
-    let replied = false;
-
-    const finish = (status, body) => {
-        if (replied) return;
-        replied = true;
-        clearTimeout(timer);
-        res.status(status).json(body);
-    };
-
-    proc.stdout.on('data', (data) => { stdout += data.toString(); });
-    proc.stderr.on('data', (data) => { stderr += data.toString(); });
-    proc.on('error', (error) => finish(500, { success: false, error: error.message }));
-    proc.on('close', (code) => {
-        if (code !== 0) {
-            return finish(502, { success: false, error: stderr.trim() || `ROS 2 服务调用失败，退出码 ${code}` });
+    app.post('/api/arm/pose', (req, res) => {
+        const fields = ['x', 'y', 'z', 'pitch_deg'];
+        const request = Object.fromEntries(fields.map((field) => [field, Number(req.body?.[field])]));
+        if (fields.some((field) => !Number.isFinite(request[field]))) {
+            return res.status(400).json({ success: false, error: 'X、Y、Z 和俯仰角必须是有效数字' });
         }
-        const accepted = /success\s*[=:]\s*(?:true|True)/.test(stdout);
-        finish(accepted ? 200 : 422, {
-            success: accepted,
-            accepted,
-            message: accepted ? '机械臂目标已提交' : '机械臂控制器拒绝了该目标',
-            response: stdout.trim()
-        });
-    });
 
-    const timer = setTimeout(() => {
-        proc.kill('SIGTERM');
-        finish(504, { success: false, error: '等待机械臂服务响应超时' });
-    }, 10000);
-});
+        const config = loadConfig();
+        const serviceName = config.services?.set_arm_pose || '/set_arm_pose';
+        if (!/^\/[a-zA-Z0-9_/]+$/.test(serviceName)) {
+            return res.status(500).json({ success: false, error: '机械臂服务名配置无效' });
+        }
+
+        const payload = `{x: ${request.x}, y: ${request.y}, z: ${request.z}, pitch_deg: ${request.pitch_deg}}`;
+        const command = [
+            ROS_SETUP_COMMAND,
+            `ros2 service call ${serviceName} leap_interfaces/srv/SetArmPose '${payload}'`
+        ].join(' && ');
+
+        const proc = spawn('bash', ['-lc', command], { stdio: ['ignore', 'pipe', 'pipe'] });
+        let stdout = '';
+        let stderr = '';
+        let replied = false;
+
+        const finish = (status, body) => {
+            if (replied) return;
+            replied = true;
+            clearTimeout(timer);
+            res.status(status).json(body);
+        };
+
+        proc.stdout.on('data', (data) => { stdout += data.toString(); });
+        proc.stderr.on('data', (data) => { stderr += data.toString(); });
+        proc.on('error', (error) => finish(500, { success: false, error: error.message }));
+        proc.on('close', (code) => {
+            if (code !== 0) {
+                return finish(502, { success: false, error: stderr.trim() || `ROS 2 服务调用失败，退出码 ${code}` });
+            }
+            const accepted = /success\s*[=:]\s*(?:true|True)/.test(stdout);
+            finish(accepted ? 200 : 422, {
+                success: accepted,
+                accepted,
+                message: accepted ? '机械臂目标已提交' : '机械臂控制器拒绝了该目标',
+                response: stdout.trim()
+            });
+        });
+
+        const timer = setTimeout(() => {
+            proc.kill('SIGTERM');
+            finish(504, { success: false, error: '等待机械臂服务响应超时' });
+        }, 10000);
+    });
+}
 
 async function fetchMediaMtxJson(baseUrl, path) {
     const controller = new AbortController();
@@ -343,11 +356,12 @@ app.get('/api/list_maps', (req, res) => {
         if (!fs.existsSync(mapsDir)) {
             return res.json({ maps: [] });
         }
-        const files = fs.readdirSync(mapsDir)
-            .filter(f => f.endsWith('.yaml'))
+        const files = fs.readdirSync(mapsDir, { withFileTypes: true })
+            .filter(entry => entry.isFile() && !entry.name.startsWith('.') && entry.name.endsWith('.yaml'))
+            .map(entry => entry.name)
             .map(f => ({
-                name: f.replace('.yaml', ''),
-                path: path.join(mapsDir, f.replace('.yaml', ''))
+                name: f.slice(0, -5),
+                path: path.join(mapsDir, f.slice(0, -5))
             }))
             .sort((a, b) => a.name.localeCompare(b.name));
         res.json({ maps: files });
@@ -366,7 +380,8 @@ app.post('/api/cancel_navigation', async (req, res) => {
     } catch (error) { res.status(502).json({ success: false, error: error.message }); }
 });
 
-installMapSaving(app, { loadConfig, setupCommand: ROS_SETUP_COMMAND,
+installMapSaving(app, { loadConfig, setupCommand: ROS_SETUP_COMMAND, pointStore,
+    navigationMap: () => navigator.session().mapPath,
     mappingAlgorithm: () => mapping.status().algorithm });
 
 // 停止所有活跃进程的函数

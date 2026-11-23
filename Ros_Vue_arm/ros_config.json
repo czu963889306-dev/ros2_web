@@ -14,6 +14,13 @@
           "/root/ros2_web/foxglove_bridge.params.yaml"
         ],
         "delay": 0
+      },
+      {
+        "id": "mapTopicRelay",
+        "description": "地图自定义话题按需转发",
+        "command": "/usr/bin/python3",
+        "args": ["/root/ros2_web/ros2-console", "map_topic_relay"],
+        "delay": 0
       }
     ],
     "mapping": [
@@ -48,7 +55,7 @@
     "stream_port": 8080,
     "mediamtx_api_url": "http://127.0.0.1:9997",
     "webrtc_port": 8889,
-    "preferred_webrtc_path": "cam0"
+    "preferred_webrtc_path": "usb"
   },
   "services": {
     "set_arm_pose": "/set_arm_pose"
@@ -57,10 +64,14 @@
     "cmd_vel": "/cmd_vel",
     "servo_cmd": "/servo_cmd",
     "map": "/map",
+    "robot_description": "/robot_description",
     "costmap": "/global_costmap/costmap",
     "scan": "/scan",
+    "cloud": "/mapping_3d/cloud_map",
+    "pose3d": "/mapping_3d/robot_pose",
     "tf": "/web/tf",
     "odom": "/web/odometry/filtered",
+    "controller_odom": "/odom",
     "plan": "/plan",
     "goal_pose": "/goal_pose",
     "initial_pose": "/initialpose",
@@ -70,6 +81,7 @@
   },
   "default_mapping_algorithm": "slam_toolbox",
   "mapping_algorithms": {
+    "rtabmap_3d": { "service": "chuyun-mapping-3d.service" },
     "cartographer": {
       "id": "mapCartographer",
       "description": "Cartographer 建图（融合里程计）",
